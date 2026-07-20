@@ -4,14 +4,19 @@ set -euo pipefail
 repo_root=${1:-"$HOME/projects/spark-signals"}
 agent="$repo_root/target/release/spark-agent"
 
-sample=$($agent --once --stdout --site home --node spark-885a)
-reported=$(jq -r '.points[] | select(.name == "system.memory.linux.total") | .value' <<<"$sample")
+sample_file=$(mktemp)
+trap 'rm -f "$sample_file"' EXIT
+"$agent" --once --stdout --site home --node spark-885a >"$sample_file"
+reported=$(jq -r 'select(.kind == "metric_batch") | .points[] |
+  select(.name == "system.memory.linux.total") | .value' "$sample_file")
 expected=$(awk '$1 == "MemTotal:" { print $2 * 1024 }' /proc/meminfo)
 
 awk -v reported="$reported" -v expected="$expected" 'BEGIN { exit !(reported == expected) }'
 printf 'MemTotal bytes: reported=%s expected=%s\n' "$reported" "$expected"
 
-jq -e '[.points[] | select(.value == null)] | all(.quality == "error" or .quality == "unsupported" or .quality == "stale")' <<<"$sample" >/dev/null
+jq -s -e '[.[] | select(.kind == "metric_batch") | .points[] |
+  select(.value == null)] | all(.quality == "error" or
+  .quality == "unsupported" or .quality == "stale")' "$sample_file" >/dev/null
 printf 'Null observation quality states: valid\n'
 
 if systemctl --user is-active --quiet spark-agent.service; then

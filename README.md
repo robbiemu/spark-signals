@@ -1,9 +1,9 @@
 # spark-signals
 
-Host-native telemetry for NVIDIA DGX Spark. `spark-agent` samples Linux health
-signals, wraps them in the versioned `spark.signal/v1` contract, and publishes
-self-contained snapshots to NATS Core. The prototype can also emit JSON Lines
-to stdout for fixture validation and diagnostics.
+Host-native telemetry for NVIDIA DGX Spark. `spark-agent` samples Linux, NVIDIA,
+configured systemd, and model-server health, then publishes versioned signals
+to NATS Core. `spark-otel-bridge` converts the same stream to OTLP/HTTP metrics
+and logs. JSON Lines remains available for fixture validation and diagnostics.
 
 This project takes collection lessons from
 [MiaAI-Lab/sparkDash](https://github.com/MiaAI-Lab/sparkDash) while separating
@@ -11,20 +11,23 @@ measurement from presentation. In particular, missing or failed observations
 remain absent and carry an explicit quality state; they are never converted to
 plausible numeric zeroes.
 
-## Prototype scope
+## Current scope
 
 The current prototype includes:
 
 - a versioned JSON envelope and finite metric catalogue;
-- `/proc` collectors for uptime, CPU utilization, load, Linux unified-memory
-  facts, swap capacity, and CPU/memory PSI;
+- Linux CPU, memory, PSI, network, block-I/O, filesystem, and temperature
+  collectors;
+- dynamically loaded NVML metrics with a named-field `nvidia-smi` fallback;
+- opt-in configured systemd probes and SGLang, vLLM, llama.cpp,
+  OpenAI-compatible, or custom model-server adapters;
 - baseline-aware CPU utilization (the first reading is explicitly unavailable);
-- a single periodic Tokio scheduler;
-- JSON Lines diagnostics and a coalescing NATS publication channel; and
-- a hardened example systemd unit.
+- bounded/coalescing NATS publishing with authentication, TLS, and reconnect
+  state replay; and
+- an OTLP/HTTP metrics and logs bridge with bounded input and schema validation.
 
-NVIDIA/NVML, storage, network, OTEL bridge, services, and LLM probes are tracked
-in [ROADMAP.md](ROADMAP.md).
+See [ROADMAP.md](ROADMAP.md) for validation status and remaining work through
+Phase 5. Phase 6 UI and operational hardening have intentionally not started.
 
 ## Run
 
@@ -44,11 +47,29 @@ cargo run -p spark-agent -- \
   --node spark-885a
 ```
 
-When `--nats-url` is omitted, stdout output is enabled automatically. The NATS
-subject is `spark.v1.<site>.<node>.sample.system`. Site and node components are
-restricted to ASCII letters, digits, `_`, and `-`.
+Observe configured services and LLM endpoints:
 
-For prototype installs that keep the binary under `~/projects`, use
+```console
+cargo run -p spark-agent -- \
+  --config deploy/example-config/agent.toml \
+  --stdout --site home --node spark-885a
+```
+
+When `--nats-url` is omitted, stdout output is enabled automatically. Subjects
+are documented in [docs/schema-v1.md](docs/schema-v1.md). Site and node
+components are restricted to ASCII letters, digits, `_`, and `-`.
+
+Adapter details and custom metric mappings are in
+[docs/llm-adapters.md](docs/llm-adapters.md). The example broker ACL and secret
+handling model are described in [docs/security-model.md](docs/security-model.md).
+Username/password and JWT/NKey deployment paths are documented in
+[docs/nats-credentials.md](docs/nats-credentials.md).
+The pinned OTEL conventions and instrument mapping are in
+[docs/otel-mapping.md](docs/otel-mapping.md).
+The finite metric and attribute names are listed in
+[docs/metric-catalogue.md](docs/metric-catalogue.md).
+
+For user installs that keep the binary under `~/projects`, use
 `deploy/systemd/spark-agent.user.service`. The system-wide production example
 is `deploy/systemd/spark-agent.service` and expects a dedicated service account
 and `/usr/local/bin/spark-agent`.
@@ -63,9 +84,9 @@ cargo test --workspace
 
 On a deployed Linux host, `deploy/validate-host.sh` compares the agent's
 reported `MemTotal` to `/proc/meminfo`, checks unavailable-value quality states,
-and verifies that the stdout-only prototype service has no listening sockets.
-`deploy/test-nats.sh` uses short-lived Docker containers to verify a real NATS
-Core publication and removes them when the check finishes.
+and verifies that the agent service has no listening sockets.
+`deploy/test-nats.sh` uses short-lived Docker containers to verify an
+authenticated NATS Core publication and removes them when the check finishes.
 
 ## License
 

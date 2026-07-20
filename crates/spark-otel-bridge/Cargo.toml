@@ -1,0 +1,25 @@
+[package]
+name = "spark-otel-bridge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+async-nats.workspace = true
+clap.workspace = true
+futures-util = "0.3"
+opentelemetry = { version = "0.32", features = ["metrics", "logs"] }
+opentelemetry-appender-tracing = "0.32"
+opentelemetry-otlp = { version = "0.32", features = ["metrics", "logs", "http-proto", "reqwest-blocking-client"] }
+opentelemetry_sdk = { version = "0.32", features = ["metrics", "logs"] }
+serde_json.workspace = true
+spark-schema = { path = "../spark-schema" }
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true
+

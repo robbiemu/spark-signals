@@ -1,0 +1,39 @@
+# Only entries listed here are probed. Model paths and command lines are never read.
+[[service]]
+name = "dgx-spark-inference.service"
+
+[[service]]
+name = "inference-agentic-helper.service"
+
+# SGLang must be started with --enable-metrics for queue and token telemetry.
+# A stopped service is reported as spark.llm.available=null with an error quality.
+[[llm]]
+id = "sglang-primary"
+backend = "sglang"
+base_url = "http://127.0.0.1:30000"
+# served_model_id = "configured-public-model-name"
+# context_capacity = 32768
+
+[[llm]]
+id = "sglang-secondary"
+backend = "sglang"
+base_url = "http://127.0.0.1:30001"
+
+# Example of observing another Prometheus-compatible model server without code.
+# [[llm]]
+# id = "custom-model-server"
+# backend = "custom"
+# base_url = "https://127.0.0.1:8443"
+# metrics_path = "/metrics"
+# served_model_id = "configured-public-model-name"
+# context_capacity = 32768
+# auth_header_file = "/home/robbie/.config/spark-signals/llm-auth-header"
+# tls_ca_file = "/home/robbie/.config/spark-signals/llm-ca.pem"
+#
+# [llm.metric_names]
+# running = "model_requests_running"
+# queued = "model_requests_waiting"
+# input_tokens = "model_prompt_tokens_total"
+# output_tokens = "model_generation_tokens_total"
+# generation_rate = "model_generation_tokens_per_second"
+# uptime = "model_server_uptime_seconds"

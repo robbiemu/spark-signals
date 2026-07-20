@@ -9,6 +9,7 @@ User=spark-signals
 Group=spark-signals
 EnvironmentFile=-/etc/spark-signals/agent.env
 ExecStart=/usr/local/bin/spark-agent --site home --node %H
+ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=5
 
@@ -27,4 +28,3 @@ ReadOnlyPaths=/sys
 
 [Install]
 WantedBy=multi-user.target
-

@@ -1,0 +1,10 @@
+services:
+  nats:
+    image: nats:2-alpine
+    command: ["--config", "/etc/nats/nats-server.conf"]
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - ../runtime/nats.env
+    volumes:
+      - ./nats-server.conf:/etc/nats/nats-server.conf:ro

@@ -12,9 +12,10 @@ chrono.workspace = true
 clap.workspace = true
 serde_json.workspace = true
 spark-linux = { path = "../spark-linux" }
+spark-nvidia = { path = "../spark-nvidia" }
+spark-probes = { path = "../spark-probes" }
 spark-schema = { path = "../spark-schema" }
 tokio.workspace = true
 
 [lints]
 workspace = true
-
