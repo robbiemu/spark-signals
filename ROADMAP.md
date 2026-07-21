@@ -115,6 +115,11 @@ RAM-intensive inference services.
 
 ## Phase 6 — consumers and operational hardening
 
+- [ ] Establish a versioned release process with release criteria, protected
+  tags, release notes, checksummed Linux AArch64 bundles containing the binaries
+  and deployment assets, documented configuration migrations, and tested
+  upgrade and rollback paths. Replace commit-based operator installation with
+  release selection when that process is ready.
 - [ ] Evaluate Grafana Cloud, Honeycomb, New Relic, and Datadog through the
   `standard` OTLP target; add provider plugins only where credential security,
   endpoint validation, or override policy requires provider-specific behavior.
@@ -123,5 +128,11 @@ RAM-intensive inference services.
 - [ ] Measure and enforce the agent/bridge RSS, CPU, binary-size, and payload budgets.
 - [ ] Validate the final systemd sandbox against NVML/device access, relaxing only
   demonstrated restrictions.
+- [ ] Define platform abstraction boundaries for host and accelerator telemetry,
+  configured-service health probes, and agent/bridge supervision, retaining
+  systemd as one Linux backend rather than a core dependency. Use the evaluation
+  to scope possible support for non-DGX clusters, including macOS/Apple Silicon
+  and Linux/AMD accelerator hosts, without weakening privilege isolation or
+  service-status semantics.
 - [ ] Complete idle, inference, memory-pressure, broker/exporter outage, service
   restart, and agent restart acceptance scenarios.
