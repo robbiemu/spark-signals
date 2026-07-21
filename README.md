@@ -1,3 +1,6 @@
+<img width="2172" height="724" alt="2a3a5fd8-9f8f-4d9a-84da-1a6f5572097a" src="https://github.com/user-attachments/assets/2af982ed-16c5-472f-8b8b-b352cdc25dff" />
+
+
 # spark-signals
 
 Host-native telemetry for NVIDIA DGX Spark. Here, **agent** means the host-monitoring
