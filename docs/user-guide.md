@@ -12,7 +12,7 @@ Run the commands below from the repository root unless a section says otherwise.
 
 ## What you are installing
 
-In this guide, **agent** means the host-monitoring process that runs on each Spark, not an LLM agent. Spark Signals has two executables with deliberately separate jobs:
+Spark Signals has two executables with deliberately separate jobs:
 
 ```mermaid
 flowchart TD
@@ -103,7 +103,7 @@ If the sample contains Linux memory and CPU observations, the basic host collect
 
 ## Prepare the host configuration
 
-`agent.toml` holds the structured monitoring configuration for `spark-agent`. `agent.env` is named for the environment variables supplied to that process, including the node identity and optional NATS connection settings.
+In these filenames, `agent` refers to the `spark-agent` host-monitoring process. `agent.toml` contains structured monitoring configuration; `agent.env` contains settings passed through the process environment, such as the node identity and optional NATS connection settings.
 
 Use `deploy/runtime` to prepare this host's configuration. It is a Git-ignored staging directory in the checkout, so the host identity, endpoint settings, and environment-based credentials do not enter source history. During system installation, the installer copies `agent.toml`, `agent.env`, and the optional `bridge.env` into `/etc/spark-signals`; the services read those installed copies rather than the files in the checkout. Keep `deploy/runtime` for validation and future updates, and run the installer again after changing a staged file.
 

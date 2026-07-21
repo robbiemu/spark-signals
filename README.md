@@ -3,11 +3,10 @@
 
 # spark-signals
 
-Host-native telemetry for NVIDIA DGX Spark. Here, **agent** means the host-monitoring
-process, not an LLM agent. `spark-agent` samples Linux, NVIDIA, configured systemd,
-and model-server health, then publishes versioned signals to NATS Core.
-`spark-otel-bridge` converts the same stream to OTLP/HTTP metrics and logs. JSON
-Lines remains available for fixture validation and diagnostics.
+Host-native telemetry for NVIDIA DGX Spark. `spark-agent` samples Linux, NVIDIA,
+configured systemd, and model-server health, then publishes versioned signals
+to NATS Core. `spark-otel-bridge` converts the same stream to OTLP/HTTP metrics
+and logs. JSON Lines remains available for fixture validation and diagnostics.
 
 This project takes collection lessons from
 [MiaAI-Lab/sparkDash](https://github.com/MiaAI-Lab/sparkDash) while separating
