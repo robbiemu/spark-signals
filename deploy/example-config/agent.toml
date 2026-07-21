@@ -1,3 +1,5 @@
+hardware_capabilities_dir = "/etc/spark-signals/hardware-capabilities"
+
 # Only entries listed here are probed. Model paths and command lines are never read.
 [[service]]
 name = "dgx-spark-inference.service"

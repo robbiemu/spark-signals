@@ -1,0 +1,12 @@
+[[hardware_profile]]
+id = "dgx-spark-gb10"
+
+[hardware_profile.match]
+gpu_product = "NVIDIA GB10"
+
+[[hardware_profile.capability]]
+metric = "nvidia.gpu.clock.frequency"
+source = "nvml"
+attributes = { "clock.domain" = "memory" }
+policy = "disabled"
+reason = "NVML_NOTSUPPORTED"

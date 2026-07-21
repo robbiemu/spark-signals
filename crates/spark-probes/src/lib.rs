@@ -20,6 +20,8 @@ use spark_schema::{MetricPoint, Quality};
 #[serde(deny_unknown_fields)]
 pub struct AgentConfig {
     #[serde(default)]
+    pub hardware_capabilities_dir: Option<PathBuf>,
+    #[serde(default)]
     pub service: Vec<ServiceConfig>,
     #[serde(default)]
     pub llm: Vec<LlmEndpointConfig>,

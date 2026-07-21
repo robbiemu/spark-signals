@@ -6,9 +6,11 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+anyhow.workspace = true
 nvml-wrapper = "0.12.1"
+serde.workspace = true
 spark-schema = { path = "../spark-schema" }
+toml.workspace = true
 
 [lints]
 workspace = true
-

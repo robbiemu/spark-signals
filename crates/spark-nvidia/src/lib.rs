@@ -2,10 +2,12 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
+    path::Path,
     process::Command,
     sync::{Mutex, mpsc},
 };
 
+use anyhow::Result;
 use nvml_wrapper::{
     Nvml, cuda_driver_version_major, cuda_driver_version_minor,
     enum_wrappers::device::{Clock, PerformanceState, TemperatureSensor},
@@ -14,9 +16,15 @@ use nvml_wrapper::{
 };
 use spark_schema::{MetricPoint, Quality};
 
+mod capabilities;
+
+use capabilities::CapabilityRuntime;
+pub use capabilities::{CapabilityKey, CapabilityPolicy, HardwareIdentity};
+
 pub struct NvidiaCollector {
     nvml: Option<Nvml>,
     include_process_allocations: bool,
+    capabilities: Mutex<CapabilityRuntime>,
     xid: XidMonitor,
 }
 
@@ -34,13 +42,41 @@ struct XidMonitor {
 }
 
 impl NvidiaCollector {
-    #[must_use]
-    pub fn new(include_process_allocations: bool) -> Self {
-        Self {
-            nvml: Nvml::init().ok(),
+    /// Initializes NVML and loads the configured hardware capability profiles.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when a configured profile directory is unreadable or invalid.
+    pub fn new(
+        include_process_allocations: bool,
+        capability_directory: Option<&Path>,
+    ) -> Result<Self> {
+        let nvml = Nvml::init().ok();
+        let identity = nvml
+            .as_ref()
+            .map_or_else(HardwareIdentity::default, hardware_identity);
+        Ok(Self {
+            nvml,
             include_process_allocations,
+            capabilities: Mutex::new(CapabilityRuntime::load(capability_directory, identity)?),
             xid: XidMonitor::start(),
-        }
+        })
+    }
+
+    /// Transactionally reloads capability profiles for the current hardware identity.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error without changing active policies when the new profiles are invalid.
+    pub fn reload_capabilities(&self, capability_directory: Option<&Path>) -> Result<()> {
+        let identity = self
+            .nvml
+            .as_ref()
+            .map_or_else(HardwareIdentity::default, hardware_identity);
+        self.capabilities
+            .lock()
+            .map_err(|_| anyhow::anyhow!("hardware capability state lock is poisoned"))?
+            .reload(capability_directory, identity)
     }
 
     #[must_use]
@@ -80,9 +116,18 @@ impl NvidiaCollector {
                         if let Ok(uuid) = device.uuid() {
                             inventory.insert(format!("nvidia.gpu.{index}.uuid"), uuid);
                         }
+                        if let Ok(pci) = device.pci_info() {
+                            inventory.insert(
+                                format!("nvidia.gpu.{index}.pci_device_id"),
+                                format!("{:08x}", pci.pci_device_id),
+                            );
+                        }
                     }
                 }
             }
+        }
+        if let Ok(capabilities) = self.capabilities.lock() {
+            inventory.extend(capabilities.inventory_attributes());
         }
         inventory
     }
@@ -93,6 +138,9 @@ impl NvidiaCollector {
         let Some(nvml) = &self.nvml else {
             return collect_smi_fallback();
         };
+        if let Ok(mut capabilities) = self.capabilities.lock() {
+            capabilities.update_identity(hardware_identity(nvml));
+        }
         let Ok(count) = nvml.device_count() else {
             return vec![unavailable(
                 "nvidia.gpu.utilization",
@@ -149,9 +197,26 @@ impl NvidiaCollector {
                 |value| gauge("nvidia.gpu.power.draw", f64::from(value) / 1000.0, "W"),
             )));
             for (clock, label) in [(Clock::Graphics, "graphics"), (Clock::Memory, "memory")] {
+                let key = CapabilityKey::new(
+                    "nvml",
+                    "nvidia.gpu.clock.frequency",
+                    BTreeMap::from([("clock.domain".to_owned(), label.to_owned())]),
+                );
+                let should_query = self
+                    .capabilities
+                    .lock()
+                    .map_or(true, |capabilities| capabilities.should_query(&key));
+                if !should_query {
+                    continue;
+                }
+                let result = device.clock_info(clock);
+                if matches!(result, Err(NvmlError::NotSupported))
+                    && let Ok(mut capabilities) = self.capabilities.lock()
+                {
+                    capabilities.observe_definitive_unsupported(&key);
+                }
                 points.push(decorate(
-                    device
-                        .clock_info(clock)
+                    result
                         .map_or_else(
                             |error| nvml_unavailable("nvidia.gpu.clock.frequency", "MHz", &error),
                             |value| gauge("nvidia.gpu.clock.frequency", f64::from(value), "MHz"),
@@ -220,6 +285,29 @@ impl NvidiaCollector {
         points.extend(self.xid.collect());
         points
     }
+}
+
+fn hardware_identity(nvml: &Nvml) -> HardwareIdentity {
+    let mut identity = HardwareIdentity {
+        driver_version: nvml.sys_driver_version().ok(),
+        ..HardwareIdentity::default()
+    };
+    if let Ok(count) = nvml.device_count() {
+        for index in 0..count {
+            let Ok(device) = nvml.device_by_index(index) else {
+                continue;
+            };
+            if let Ok(product) = device.name() {
+                identity.gpu_products.insert(product);
+            }
+            if let Ok(pci) = device.pci_info() {
+                identity
+                    .pci_device_ids
+                    .insert(format!("{:08x}", pci.pci_device_id));
+            }
+        }
+    }
+    identity
 }
 
 impl XidMonitor {

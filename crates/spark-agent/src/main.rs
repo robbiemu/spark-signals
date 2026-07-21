@@ -165,9 +165,13 @@ async fn main() -> Result<()> {
     let reconnects = Arc::new(AtomicU64::new(0));
     let dropped_events = Arc::new(AtomicU64::new(0));
 
-    let nvidia = NvidiaCollector::new(args.include_gpu_process_allocations);
+    let nvidia = NvidiaCollector::new(
+        args.include_gpu_process_allocations,
+        config.hardware_capabilities_dir.as_deref(),
+    )?;
     let mut inventory = host_inventory();
-    inventory.extend(nvidia.inventory());
+    let mut last_nvidia_inventory = nvidia.inventory();
+    inventory.extend(last_nvidia_inventory.clone());
     publish_state(
         &state_sender,
         &args.site,
@@ -243,11 +247,27 @@ async fn main() -> Result<()> {
                 };
                 match AgentConfig::load(path).and_then(|next| {
                     let probe = LlmProbe::new(next.llm.clone())?;
+                    nvidia.reload_capabilities(next.hardware_capabilities_dir.as_deref())?;
                     Ok((next, probe))
                 }) {
                     Ok((next, probe)) => {
                         config = next;
                         llm = probe;
+                        last_nvidia_inventory = nvidia.inventory();
+                        let mut inventory = host_inventory();
+                        inventory.extend(last_nvidia_inventory.clone());
+                        publish_state(
+                            &state_sender,
+                            &args.site,
+                            &node_id,
+                            "inventory",
+                            factory.build(
+                                Signal::Inventory { attributes: inventory },
+                                Duration::ZERO,
+                                Duration::from_mins(2),
+                            ),
+                            print_stdout,
+                        )?;
                         eprintln!("agent configuration reloaded");
                     }
                     Err(error) => eprintln!("configuration reload failed; keeping previous configuration: {error}"),
@@ -314,6 +334,26 @@ async fn main() -> Result<()> {
             Vec::new()
         };
         let mut nvidia_points = nvidia.collect();
+        let current_nvidia_inventory = nvidia.inventory();
+        if current_nvidia_inventory != last_nvidia_inventory {
+            last_nvidia_inventory = current_nvidia_inventory;
+            let mut inventory = host_inventory();
+            inventory.extend(last_nvidia_inventory.clone());
+            publish_state(
+                &state_sender,
+                &args.site,
+                &node_id,
+                "inventory",
+                factory.build(
+                    Signal::Inventory {
+                        attributes: inventory,
+                    },
+                    Duration::ZERO,
+                    Duration::from_mins(2),
+                ),
+                print_stdout,
+            )?;
+        }
         for xid in nvidia_points.iter().filter(|point| {
             point.name == "nvidia.gpu.xid.count" && point.value.is_some_and(|value| value > 0.0)
         }) {
