@@ -1,8 +1,7 @@
 # Configured service probes
 
-The `spark-agent` host-monitoring process observes only the system `systemd`
-units explicitly listed in `agent.toml`. It does not discover, start, stop, or
-restart services.
+`spark-agent` observes only the system `systemd` units explicitly listed in
+`agent.toml`. It does not discover, start, stop, or restart services.
 
 Add one `[[service]]` table for each unit:
 
