@@ -3,24 +3,24 @@ signal_policies_dir = "/etc/spark-signals/signal-policies"
 
 # Only entries listed here are probed. Model paths and command lines are never read.
 [[service]]
-name = "dgx-spark-inference.service"
+name = "inference-primary.service"
 
 [[service]]
-name = "inference-agentic-helper.service"
+name = "inference-helper.service"
 
 # SGLang must be started with --enable-metrics for queue and token telemetry.
 # A stopped service is reported as spark.llm.available=null with an error quality.
 [[llm]]
 id = "sglang-primary"
 backend = "sglang"
-base_url = "http://127.0.0.1:30000"
+base_url = "http://127.0.0.1:8000"
 # served_model_id = "configured-public-model-name"
 # context_capacity = 32768
 
 [[llm]]
 id = "sglang-secondary"
 backend = "sglang"
-base_url = "http://127.0.0.1:30001"
+base_url = "http://127.0.0.1:8001"
 
 # Example of observing another Prometheus-compatible model server without code.
 # [[llm]]

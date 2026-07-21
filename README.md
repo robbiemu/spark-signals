@@ -34,7 +34,7 @@ Phase 5. Phase 6 UI and operational hardening have intentionally not started.
 Print one observation:
 
 ```console
-cargo run -p spark-agent -- --once --stdout --site home --node spark-885a
+cargo run -p spark-agent -- --once --stdout --site example --node spark-node-01
 ```
 
 Publish periodically to NATS (and also print for diagnostics):
@@ -43,8 +43,8 @@ Publish periodically to NATS (and also print for diagnostics):
 cargo run -p spark-agent -- \
   --nats-url nats://127.0.0.1:4222 \
   --stdout \
-  --site home \
-  --node spark-885a
+  --site example \
+  --node spark-node-01
 ```
 
 Observe configured services and LLM endpoints:
@@ -52,7 +52,7 @@ Observe configured services and LLM endpoints:
 ```console
 cargo run -p spark-agent -- \
   --config deploy/example-config/agent.toml \
-  --stdout --site home --node spark-885a
+  --stdout --site example --node spark-node-01
 ```
 
 When `--nats-url` is omitted, stdout output is enabled automatically. Subjects
@@ -72,8 +72,10 @@ The finite metric and attribute names are listed in
 [docs/metric-catalogue.md](docs/metric-catalogue.md).
 
 Production deployment uses dedicated system identities and does not depend on a
-login account or systemd lingering. Build the release binaries, then run the
-root installer with the repository path:
+login account or systemd lingering. Copy `deploy/example-config/agent.toml` to
+ignored `deploy/runtime/agent.toml` and set the deployment-specific service
+names and endpoints there. Build the release binaries, then run the root
+installer with the repository path:
 
 ```console
 cargo build --release --workspace
@@ -84,11 +86,10 @@ When migrating an existing development user service, pass that login name as
 the optional second argument so the installer can disable the legacy units.
 
 The installer copies root-owned binaries and configuration out of the home
-directory and installs the agent as `spark-signals-agent`. When the validated
-Maple credential exists at
-`/etc/srvmini2/spark-signals/maple-otlp-client.json`, it also enables the bridge;
-otherwise that unit remains disabled. The `.user.service` files remain
-development-only examples.
+directory and installs the agent as `spark-signals-agent`. When
+`deploy/runtime/bridge.env` names an existing validated Maple credential, it
+also enables the bridge; otherwise that unit remains disabled. The
+`.user.service` files remain development-only examples.
 
 ## Validate
 

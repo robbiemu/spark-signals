@@ -46,8 +46,9 @@ path supports standard `OTEL_EXPORTER_OTLP_*` environment variables and
 `deploy/test-otel.sh` verifies header injection, both signal paths, receiver
 outage isolation, and recovery.
 
-Production Maple mode instead takes `--maple-credential` and validates
-`srvmini2-maple-otlp-client/v1`. The credential endpoint is authoritative and
-the bridge constructs the two signal URLs itself. Any general, metrics, or logs
-OTLP header environment variable makes secure mode fail closed so it cannot
-override the credential-derived Basic authorization header.
+Production Maple mode instead reads `MAPLE_CREDENTIAL`,
+`MAPLE_CREDENTIAL_SCHEMA`, and `MAPLE_PRODUCER` from the protected bridge
+environment file. The credential endpoint is authoritative and the bridge
+constructs the two signal URLs itself. Any general, metrics, or logs OTLP
+header environment variable makes secure mode fail closed so it cannot override
+the credential-derived Basic authorization header.

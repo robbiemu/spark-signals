@@ -30,7 +30,7 @@ use signal_policy::SignalEmitter;
 #[derive(Parser)]
 #[command(about = "DGX Spark host telemetry agent")]
 struct Args {
-    #[arg(long, env = "SPARK_SITE", default_value = "home", value_parser = valid_subject_component)]
+    #[arg(long, env = "SPARK_SITE", default_value = "default", value_parser = valid_subject_component)]
     site: String,
     #[arg(long, env = "SPARK_NODE", value_parser = valid_subject_component)]
     node: Option<String>,
@@ -1131,21 +1131,29 @@ fn stable_jitter(node: &str, interval: Duration) -> Duration {
 mod tests {
     use super::*;
 
+    const TEST_ENV: &str = include_str!("../../../.env.test");
+
+    fn test_env(name: &str) -> &'static str {
+        TEST_ENV
+            .lines()
+            .filter_map(|line| line.split_once('='))
+            .find_map(|(key, value)| (key == name).then_some(value))
+            .unwrap_or_else(|| panic!("missing test environment value: {name}"))
+    }
+
     #[test]
     fn validates_subject_components() {
-        assert!(valid_subject_component("spark-885a").is_ok());
-        assert!(valid_subject_component("home.wildcard").is_err());
+        assert!(valid_subject_component(test_env("SPARK_TEST_NODE")).is_ok());
+        assert!(valid_subject_component("invalid.component").is_err());
         assert!(valid_subject_component(">").is_err());
     }
 
     #[test]
     fn sampling_jitter_is_stable_and_bounded() {
         let interval = Duration::from_secs(2);
-        assert_eq!(
-            stable_jitter("spark-885a", interval),
-            stable_jitter("spark-885a", interval)
-        );
-        assert!(stable_jitter("spark-885a", interval) < Duration::from_millis(500));
+        let node = test_env("SPARK_TEST_NODE");
+        assert_eq!(stable_jitter(node, interval), stable_jitter(node, interval));
+        assert!(stable_jitter(node, interval) < Duration::from_millis(500));
     }
 
     #[test]

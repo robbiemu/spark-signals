@@ -36,7 +36,6 @@ mod unavailable_log;
 use unavailable_log::UnavailableLogEmitter;
 
 const OTEL_SEMCONV_REVISION: &str = "1.41.1";
-const MAPLE_CREDENTIAL_SCHEMA: &str = "srvmini2-maple-otlp-client/v1";
 const MAPLE_PROTOCOL: &str = "http/protobuf";
 const MAX_MAPLE_CREDENTIAL_BYTES: u64 = 16 * 1024;
 
@@ -55,11 +54,17 @@ struct Args {
     nats_password: Option<String>,
     #[arg(long, env = "NATS_CA")]
     nats_ca: Option<PathBuf>,
-    #[arg(long)]
+    #[arg(long, env = "MAPLE_CREDENTIAL", requires = "maple_credential_schema")]
     maple_credential: Option<PathBuf>,
-    #[arg(long, default_value = "spark-signals")]
+    #[arg(long, env = "MAPLE_CREDENTIAL_SCHEMA", requires = "maple_credential")]
+    maple_credential_schema: Option<String>,
+    #[arg(long, env = "MAPLE_PRODUCER", default_value = "spark-signals")]
     maple_producer: String,
-    #[arg(long, default_value = "spark-signals-bridge")]
+    #[arg(
+        long,
+        env = "SPARK_BRIDGE_RUN_AS_USER",
+        default_value = "spark-signals-bridge"
+    )]
     run_as_user: String,
 }
 
@@ -171,7 +176,13 @@ async fn main() -> Result<()> {
     let maple = args
         .maple_credential
         .as_deref()
-        .map(|path| load_maple_exporter_config(path, &args.maple_producer))
+        .map(|path| {
+            let expected_schema = args
+                .maple_credential_schema
+                .as_deref()
+                .context("Maple credential schema is required in secure mode")?;
+            load_maple_exporter_config(path, expected_schema, &args.maple_producer)
+        })
         .transpose()?;
     if maple.is_some() {
         reject_otel_override_environment()?;
@@ -240,7 +251,11 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-fn load_maple_exporter_config(path: &Path, expected_producer: &str) -> Result<MapleExporterConfig> {
+fn load_maple_exporter_config(
+    path: &Path,
+    expected_schema: &str,
+    expected_producer: &str,
+) -> Result<MapleExporterConfig> {
     if !path.is_absolute() {
         anyhow::bail!("Maple credential path must be absolute");
     }
@@ -270,7 +285,7 @@ fn load_maple_exporter_config(path: &Path, expected_producer: &str) -> Result<Ma
     }
     let credential: MapleCredential =
         serde_json::from_slice(&bytes).context("decoding Maple credential")?;
-    validate_maple_credential(&credential, expected_producer)?;
+    validate_maple_credential(&credential, expected_schema, expected_producer)?;
     Ok(maple_exporter_config(&credential))
 }
 
@@ -334,8 +349,12 @@ fn validate_maple_credential_metadata(
     Ok(())
 }
 
-fn validate_maple_credential(credential: &MapleCredential, expected_producer: &str) -> Result<()> {
-    if credential.schema != MAPLE_CREDENTIAL_SCHEMA {
+fn validate_maple_credential(
+    credential: &MapleCredential,
+    expected_schema: &str,
+    expected_producer: &str,
+) -> Result<()> {
+    if expected_schema.is_empty() || credential.schema != expected_schema {
         anyhow::bail!("Maple credential schema is invalid");
     }
     if credential.producer != expected_producer {
@@ -531,10 +550,10 @@ mod tests {
 
     fn fixture_credential() -> MapleCredential {
         MapleCredential {
-            schema: MAPLE_CREDENTIAL_SCHEMA.to_owned(),
+            schema: test_env("MAPLE_TEST_SCHEMA").to_owned(),
             endpoint: test_env("MAPLE_TEST_ENDPOINT").to_owned(),
             password: test_env("MAPLE_TEST_AUTH_INPUT").to_owned(),
-            producer: "spark-signals".to_owned(),
+            producer: test_env("MAPLE_TEST_PRODUCER").to_owned(),
             protocol: MAPLE_PROTOCOL.to_owned(),
             username: test_env("MAPLE_TEST_USERNAME").to_owned(),
         }
@@ -556,7 +575,12 @@ mod tests {
     #[test]
     fn validates_maple_contract_and_builds_signal_endpoints() {
         let credential = fixture_credential();
-        validate_maple_credential(&credential, "spark-signals").unwrap();
+        validate_maple_credential(
+            &credential,
+            test_env("MAPLE_TEST_SCHEMA"),
+            test_env("MAPLE_TEST_PRODUCER"),
+        )
+        .unwrap();
         let config = maple_exporter_config(&credential);
         assert_eq!(
             config.metrics_endpoint,
@@ -580,13 +604,34 @@ mod tests {
     fn rejects_wrong_maple_producer_endpoint_or_protocol() {
         let mut credential = fixture_credential();
         credential.producer = "another-producer".to_owned();
-        assert!(validate_maple_credential(&credential, "spark-signals").is_err());
-        credential.producer = "spark-signals".to_owned();
+        assert!(
+            validate_maple_credential(
+                &credential,
+                test_env("MAPLE_TEST_SCHEMA"),
+                test_env("MAPLE_TEST_PRODUCER"),
+            )
+            .is_err()
+        );
+        credential.producer = test_env("MAPLE_TEST_PRODUCER").to_owned();
         credential.endpoint = "file:///tmp/not-an-otlp-endpoint".to_owned();
-        assert!(validate_maple_credential(&credential, "spark-signals").is_err());
+        assert!(
+            validate_maple_credential(
+                &credential,
+                test_env("MAPLE_TEST_SCHEMA"),
+                test_env("MAPLE_TEST_PRODUCER"),
+            )
+            .is_err()
+        );
         credential.endpoint = test_env("MAPLE_TEST_ENDPOINT").to_owned();
         credential.protocol = "grpc".to_owned();
-        assert!(validate_maple_credential(&credential, "spark-signals").is_err());
+        assert!(
+            validate_maple_credential(
+                &credential,
+                test_env("MAPLE_TEST_SCHEMA"),
+                test_env("MAPLE_TEST_PRODUCER"),
+            )
+            .is_err()
+        );
     }
 
     #[test]

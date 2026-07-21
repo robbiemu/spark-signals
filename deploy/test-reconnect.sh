@@ -14,12 +14,16 @@ trap cleanup EXIT
 
 set -a
 . "$repo_root/deploy/runtime/nats.env"
+. "$repo_root/deploy/runtime/agent.env"
 set +a
+: "${SPARK_SITE:?SPARK_SITE is required in deploy/runtime/agent.env}"
+: "${SPARK_NODE:?SPARK_NODE is required in deploy/runtime/agent.env}"
+inventory_subject="spark.v1.${SPARK_SITE}.${SPARK_NODE}.inventory"
 
 timeout 40 docker run --rm --network host natsio/nats-box:latest \
   nats sub \
   --server "nats://spark-bridge:$SPARK_BRIDGE_PASSWORD@127.0.0.1:4222" \
-  --count 2 --raw 'spark.v1.home.spark-885a.inventory' \
+  --count 2 --raw "$inventory_subject" \
   >"$sample" 2>"$subscriber_log" &
 subscriber_pid=$!
 

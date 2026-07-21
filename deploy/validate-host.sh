@@ -3,10 +3,14 @@ set -euo pipefail
 
 repo_root=${1:-"$HOME/projects/spark-signals"}
 agent="$repo_root/target/release/spark-agent"
+set -a
+. "$repo_root/.env.test"
+set +a
 
 sample_file=$(mktemp)
 trap 'rm -f "$sample_file"' EXIT
-"$agent" --once --stdout --site home --node spark-885a >"$sample_file"
+"$agent" --once --stdout --site "$SPARK_TEST_SITE" \
+  --node "$SPARK_TEST_NODE" >"$sample_file"
 reported=$(jq -r 'select(.kind == "metric_batch") | .points[] |
   select(.name == "system.memory.linux.total") | .value' "$sample_file")
 expected=$(awk '$1 == "MemTotal:" { print $2 * 1024 }' /proc/meminfo)

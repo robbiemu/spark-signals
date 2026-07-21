@@ -21,7 +21,7 @@ have already been validated on every DGX Spark configuration.
 - [x] Add a non-root, no-listening-port systemd example.
 - [ ] Run the prototype through longer idle and inference-load soak tests.
 
-Validation record (2026-07-19, `spark-885a`): ARM64 release build, unit tests,
+Validation record (2026-07-19, DGX Spark GB10 host): ARM64 release build, unit tests,
 strict Clippy, live `/proc/meminfo` comparison, null-quality checks, user systemd
 service startup, no-listening-socket check, and Dockerized NATS Core publication
 all passed. Idle service RSS observed at approximately 3.5 MiB; this is an
@@ -47,7 +47,7 @@ and restores it if the system agent cannot start.
 - [x] Add a named-field GB10 fallback fixture and compare unsupported fields
   against the source NVIDIA output.
 
-Validation record (2026-07-19, `spark-885a`): the ARM64 release build passed;
+Validation record (2026-07-19, DGX Spark GB10 host): the ARM64 release build passed;
 live Linux memory, network, NVMe, filesystem, temperature, NVML utilization,
 temperature, power, clocks, and throttle observations were collected. GB10
 memory-clock support remained explicit `unsupported`, and the inventory reports
@@ -70,7 +70,7 @@ observed.
 - [x] Evaluate selective JetStream retention for critical events and document
   the Core NATS durability limitation; retention is not enabled yet.
 
-Validation record (2026-07-19, `spark-885a`): authenticated Dockerized NATS
+Validation record (2026-07-19, DGX Spark GB10 host): authenticated Dockerized NATS
 publication passed, the broker survived a stop/start exercise, the agent stayed
 active, and a connected consumer received replayed inventory after reconnect.
 Live subscription checks received all six sample subjects.
@@ -86,11 +86,11 @@ Live subscription checks received all six sample subjects.
 - [x] Test metrics and logs, injected authorization, receiver outage isolation,
   and recovery against a local OTLP receiver.
 
-Validation record (2026-07-20, `spark-885a`): the bridge exported protobuf
+Validation record (2026-07-20, DGX Spark GB10 host): the bridge exported protobuf
 metrics and logs to isolated mock endpoints, then to the real authenticated
 Maple ingress. Maple queries returned more than 66 metric names, including
 `system.uptime` and `nvidia.gpu.utilization`, plus Spark inventory and
-unavailable-metric logs with `host.id=spark-885a`. The root-owned credential,
+unavailable-metric logs with the expected `host.id`. The root-owned credential,
 in-process Basic header, privilege drop, bridge lifecycle independence, and zero
 trace output were verified. The Maple endpoint required operator-managed name
 resolution on this node.
@@ -105,7 +105,7 @@ resolution on this node.
 - [x] Exclude model paths, API keys, command lines, prompts, responses, and
   unconstrained source labels.
 
-Validation record (2026-07-19, `spark-885a`): both configured SGLang endpoints
+Validation record (2026-07-19, DGX Spark GB10 host): both configured SGLang endpoints
 were stopped and appeared on the live NATS stream as explicit unreachable/error
 observations. Configured inference systemd units appeared as inactive rather
 than disappearing. Prometheus aggregation and custom-name mappings passed unit

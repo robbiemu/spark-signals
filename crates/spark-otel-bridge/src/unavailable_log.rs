@@ -188,13 +188,23 @@ mod tests {
 
     use super::*;
 
+    const TEST_ENV: &str = include_str!("../../../.env.test");
+
+    fn test_env(name: &str) -> &'static str {
+        TEST_ENV
+            .lines()
+            .filter_map(|line| line.split_once('='))
+            .find_map(|(key, value)| (key == name).then_some(value))
+            .unwrap_or_else(|| panic!("missing test environment value: {name}"))
+    }
+
     fn fixture_envelope() -> Envelope {
         Envelope {
             schema: SCHEMA_V1.to_owned(),
             node: Node {
-                site: "home".to_owned(),
-                id: "spark-885a".to_owned(),
-                host_name: "spark-885a".to_owned(),
+                site: test_env("SPARK_TEST_SITE").to_owned(),
+                id: test_env("SPARK_TEST_NODE").to_owned(),
+                host_name: test_env("SPARK_TEST_NODE").to_owned(),
             },
             boot_id: "00000000-0000-0000-0000-000000000000".to_owned(),
             sequence: 42,
@@ -251,7 +261,10 @@ mod tests {
             string_attribute(&log, "error.code"),
             Some("NVML_NOTSUPPORTED")
         );
-        assert_eq!(string_attribute(&log, "spark.node.id"), Some("spark-885a"));
+        assert_eq!(
+            string_attribute(&log, "spark.node.id"),
+            Some(test_env("SPARK_TEST_NODE"))
+        );
     }
 
     #[test]

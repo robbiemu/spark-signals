@@ -15,7 +15,7 @@ capability_config_dir="$config_dir/hardware-capabilities"
 signal_policy_source_dir="$repo_root/deploy/signal-policies"
 signal_policy_config_dir="$config_dir/signal-policies"
 state_dir=/var/lib/spark-signals
-maple_credential=/etc/srvmini2/spark-signals/maple-otlp-client.json
+maple_credential=
 
 require_regular_file() {
   local path=$1
@@ -33,6 +33,25 @@ create_service_user() {
   if ! getent passwd "$account" >/dev/null; then
     useradd --system --gid "$account" --home-dir /nonexistent \
       --shell /usr/sbin/nologin "$account"
+  fi
+}
+
+read_env_value() {
+  local path=$1
+  local key=$2
+  local line matches=0
+  ENV_VALUE=
+  while IFS= read -r line || test -n "$line"; do
+    case "$line" in
+      "$key="*)
+        ENV_VALUE=${line#*=}
+        matches=$((matches + 1))
+        ;;
+    esac
+  done <"$path"
+  if test "$matches" -gt 1; then
+    printf 'Environment key appears more than once: %s\n' "$key" >&2
+    exit 1
   fi
 }
 
@@ -96,7 +115,7 @@ restore_legacy_agent() {
 for path in \
   "$repo_root/target/release/spark-agent" \
   "$repo_root/target/release/spark-otel-bridge" \
-  "$repo_root/deploy/example-config/agent.toml" \
+  "$repo_root/deploy/runtime/agent.toml" \
   "$repo_root/deploy/systemd/spark-agent.service" \
   "$repo_root/deploy/systemd/spark-otel-bridge.service" \
   "$repo_root/deploy/runtime/agent.env"; do
@@ -109,6 +128,24 @@ if test -e "$repo_root/deploy/runtime/bridge.env"; then
     "$repo_root/deploy/runtime/bridge.env"; then
     printf 'Refusing to install Maple endpoint, protocol, or authorization overrides from an environment file.\n' >&2
     exit 1
+  fi
+  read_env_value "$repo_root/deploy/runtime/bridge.env" MAPLE_CREDENTIAL
+  maple_credential=$ENV_VALUE
+  if test -n "$maple_credential"; then
+    case "$maple_credential" in
+      /*) ;;
+      *)
+        printf 'MAPLE_CREDENTIAL must be an absolute path.\n' >&2
+        exit 1
+        ;;
+    esac
+    for key in MAPLE_CREDENTIAL_SCHEMA MAPLE_PRODUCER; do
+      read_env_value "$repo_root/deploy/runtime/bridge.env" "$key"
+      if test -z "$ENV_VALUE"; then
+        printf 'Required Maple environment key is absent: %s\n' "$key" >&2
+        exit 1
+      fi
+    done
   fi
 fi
 
@@ -148,7 +185,7 @@ install -o root -g root -m 0755 \
 install -o root -g root -m 0755 \
   "$repo_root/target/release/spark-otel-bridge" /usr/local/bin/spark-otel-bridge
 install -o root -g root -m 0644 \
-  "$repo_root/deploy/example-config/agent.toml" "$config_dir/agent.toml"
+  "$repo_root/deploy/runtime/agent.toml" "$config_dir/agent.toml"
 install -o root -g spark-signals-agent -m 0640 \
   "$repo_root/deploy/runtime/agent.env" "$config_dir/agent.env"
 if test -f "$repo_root/deploy/runtime/bridge.env"; then
@@ -191,7 +228,7 @@ if ! systemctl is-active --quiet spark-agent.service; then
   exit 1
 fi
 printf 'spark-agent: active system service as spark-signals-agent\n'
-if test -e "$maple_credential"; then
+if test -n "$maple_credential" && test -e "$maple_credential"; then
   require_regular_file "$maple_credential"
   credential_owner=$(stat -c %u "$maple_credential")
   credential_mode=$(stat -c %a "$maple_credential")
@@ -213,7 +250,7 @@ if test -e "$maple_credential"; then
   printf 'spark-otel-bridge: active system service with Maple credential\n'
 else
   systemctl disable --now spark-otel-bridge.service >/dev/null 2>&1 || true
-  printf 'spark-otel-bridge: installed but disabled; Maple credential is absent\n'
+  printf 'spark-otel-bridge: installed but disabled; configured Maple credential is absent\n'
 fi
 if test -n "$legacy_user"; then
   printf 'legacy user units disabled for: %s\n' "$legacy_user"
