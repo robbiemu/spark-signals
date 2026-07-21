@@ -29,8 +29,8 @@ base_url = "http://127.0.0.1:30001"
 # metrics_path = "/metrics"
 # served_model_id = "configured-public-model-name"
 # context_capacity = 32768
-# auth_header_file = "/home/robbie/.config/spark-signals/llm-auth-header"
-# tls_ca_file = "/home/robbie/.config/spark-signals/llm-ca.pem"
+# auth_header_file = "/etc/spark-signals/llm-auth-header"
+# tls_ca_file = "/etc/spark-signals/llm-ca.pem"
 #
 # [llm.metric_names]
 # running = "model_requests_running"

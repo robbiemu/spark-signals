@@ -26,6 +26,15 @@ start_mock() {
 
 start_mock
 
+if systemctl is-active --quiet spark-agent.service; then
+  agent_scope=system
+elif systemctl --user is-active --quiet spark-agent.service; then
+  agent_scope=user
+else
+  printf 'spark-agent service is not active\n' >&2
+  exit 1
+fi
+
 OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:14318 \
 OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer%20fixture-token' \
 OTEL_METRIC_EXPORT_INTERVAL=1000 \
@@ -33,7 +42,6 @@ OTEL_BLRP_SCHEDULE_DELAY=1000 \
   "$bridge" >"$bridge_log" 2>&1 &
 bridge_pid=$!
 sleep 2
-systemctl --user restart spark-agent.service
 
 for _ in $(seq 1 15); do
   if grep -q '^/v1/metrics$' "$requests" && grep -q '^/v1/logs$' "$requests"; then
@@ -50,7 +58,11 @@ wait "$mock_pid" >/dev/null 2>&1 || true
 before=$(wc -l <"$requests")
 sleep 3
 kill -0 "$bridge_pid"
-test "$(systemctl --user is-active spark-agent.service)" = active
+if test "$agent_scope" = system; then
+  test "$(systemctl is-active spark-agent.service)" = active
+else
+  test "$(systemctl --user is-active spark-agent.service)" = active
+fi
 
 start_mock
 for _ in $(seq 1 15); do

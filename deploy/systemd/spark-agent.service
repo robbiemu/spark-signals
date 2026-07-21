@@ -5,13 +5,14 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=spark-signals
-Group=spark-signals
-EnvironmentFile=-/etc/spark-signals/agent.env
-ExecStart=/usr/local/bin/spark-agent --site home --node %H
+User=spark-signals-agent
+Group=spark-signals-agent
+EnvironmentFile=/etc/spark-signals/agent.env
+ExecStart=/usr/local/bin/spark-agent --config /etc/spark-signals/agent.toml
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=5
+UMask=0027
 
 NoNewPrivileges=yes
 PrivateTmp=yes
@@ -21,6 +22,7 @@ ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectControlGroups=yes
 RestrictSUIDSGID=yes
+RestrictRealtime=yes
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
 ReadOnlyPaths=/proc

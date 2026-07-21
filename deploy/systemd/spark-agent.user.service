@@ -1,5 +1,5 @@
 [Unit]
-Description=Spark Signals host telemetry agent
+Description=Spark Signals host telemetry agent (development user service)
 After=network-online.target
 Wants=network-online.target
 

@@ -19,7 +19,12 @@ jq -s -e '[.[] | select(.kind == "metric_batch") | .points[] |
   .quality == "unsupported" or .quality == "stale")' "$sample_file" >/dev/null
 printf 'Null observation quality states: valid\n'
 
-if systemctl --user is-active --quiet spark-agent.service; then
+if systemctl is-active --quiet spark-agent.service; then
+  pid=$(systemctl show -p MainPID --value spark-agent.service)
+  listeners=$(ss -lntup | grep -c "pid=$pid," || true)
+  printf 'Listening network sockets: %s\n' "$listeners"
+  test "$listeners" -eq 0
+elif systemctl --user is-active --quiet spark-agent.service; then
   pid=$(systemctl --user show -p MainPID --value spark-agent.service)
   listeners=$(ss -lntup | grep -c "pid=$pid," || true)
   printf 'Listening network sockets: %s\n' "$listeners"

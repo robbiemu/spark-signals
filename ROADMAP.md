@@ -27,6 +27,11 @@ service startup, no-listening-socket check, and Dockerized NATS Core publication
 all passed. Idle service RSS observed at approximately 3.5 MiB; this is an
 observation from one short run, not yet a footprint guarantee.
 
+The production deployment uses dedicated system identities, root-owned files,
+and `multi-user.target`; the login-owned units remain development-only. The
+one-time installer can migrate away from an existing login-owned user service
+and restores it if the system agent cannot start.
+
 ## Phase 2 — NVIDIA and complete Linux health
 
 - [x] Inventory all hwmon devices, labels, limits, and thermal-zone types.
@@ -76,16 +81,19 @@ Live subscription checks received all six sample subjects.
 - [x] Map catalogue metrics to OTEL instruments with stable Spark resource and
   measurement attributes, pinned to semantic-convention revision 1.41.1.
 - [x] Translate health events to OTEL logs and reject oversized/unknown messages.
-- [x] Configure OTLP/HTTP metrics and logs through standard OTEL endpoint and
-  injected-header environment variables.
+- [x] Configure OTLP/HTTP metrics and logs through standard development OTEL
+  variables and a validated managed-credential path for production Maple.
 - [x] Test metrics and logs, injected authorization, receiver outage isolation,
   and recovery against a local OTLP receiver.
 
-Validation record (2026-07-19, `spark-885a`): the bridge exported protobuf
-metrics and logs to isolated `/v1/metrics` and `/v1/logs` mock endpoints. The
-bridge unit is installed but intentionally disabled until a Maple endpoint and
-authorization value are configured; the actual Maple receiver therefore remains
-unverified.
+Validation record (2026-07-20, `spark-885a`): the bridge exported protobuf
+metrics and logs to isolated mock endpoints, then to the real authenticated
+Maple ingress. Maple queries returned more than 66 metric names, including
+`system.uptime` and `nvidia.gpu.utilization`, plus Spark inventory and
+unavailable-metric logs with `host.id=spark-885a`. The root-owned credential,
+in-process Basic header, privilege drop, bridge lifecycle independence, and zero
+trace output were verified. `srvmini2.lan` currently resolves through the
+operator-managed `/etc/hosts` entry on this node.
 
 ## Phase 5 — configured services and inference adapters
 

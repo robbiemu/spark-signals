@@ -1,0 +1,33 @@
+[Unit]
+Description=Spark Signals NATS to OTLP bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/spark-signals/bridge.env
+ExecStart=/usr/local/bin/spark-otel-bridge --maple-credential /etc/srvmini2/spark-signals/maple-otlp-client.json --maple-producer spark-signals --run-as-user spark-signals-bridge
+Restart=on-failure
+RestartSec=5
+UMask=0027
+LimitCORE=0
+
+NoNewPrivileges=yes
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+ReadOnlyPaths=/etc/srvmini2/spark-signals/maple-otlp-client.json
+
+[Install]
+WantedBy=multi-user.target

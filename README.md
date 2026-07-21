@@ -66,13 +66,29 @@ Username/password and JWT/NKey deployment paths are documented in
 [docs/nats-credentials.md](docs/nats-credentials.md).
 The pinned OTEL conventions and instrument mapping are in
 [docs/otel-mapping.md](docs/otel-mapping.md).
+The managed producer credential and privilege-drop flow are documented in
+[docs/maple-integration.md](docs/maple-integration.md).
 The finite metric and attribute names are listed in
 [docs/metric-catalogue.md](docs/metric-catalogue.md).
 
-For user installs that keep the binary under `~/projects`, use
-`deploy/systemd/spark-agent.user.service`. The system-wide production example
-is `deploy/systemd/spark-agent.service` and expects a dedicated service account
-and `/usr/local/bin/spark-agent`.
+Production deployment uses dedicated system identities and does not depend on a
+login account or systemd lingering. Build the release binaries, then run the
+root installer with the repository path:
+
+```console
+cargo build --release --workspace
+sudo ./deploy/install-system.sh "$PWD"
+```
+
+When migrating an existing development user service, pass that login name as
+the optional second argument so the installer can disable the legacy units.
+
+The installer copies root-owned binaries and configuration out of the home
+directory and installs the agent as `spark-signals-agent`. When the validated
+Maple credential exists at
+`/etc/srvmini2/spark-signals/maple-otlp-client.json`, it also enables the bridge;
+otherwise that unit remains disabled. The `.user.service` files remain
+development-only examples.
 
 ## Validate
 
