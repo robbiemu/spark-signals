@@ -177,7 +177,7 @@ if test -n "$legacy_user"; then
   user_systemctl "$legacy_user" disable --now spark-otel-bridge.service >/dev/null 2>&1 || true
 fi
 
-if ! systemctl enable --now spark-agent.service; then
+if ! systemctl enable spark-agent.service || ! systemctl restart spark-agent.service; then
   restore_legacy_agent
   printf 'System agent failed to start; legacy user service state was restored.\n' >&2
   exit 1
@@ -203,7 +203,7 @@ if test -e "$maple_credential"; then
     printf 'srvmini2.lan does not resolve on this host.\n' >&2
     exit 1
   fi
-  if ! systemctl enable --now spark-otel-bridge.service; then
+  if ! systemctl enable spark-otel-bridge.service || ! systemctl restart spark-otel-bridge.service; then
     systemctl disable --now spark-otel-bridge.service >/dev/null 2>&1 || true
     printf 'spark-otel-bridge failed to start with the Maple credential.\n' >&2
     exit 1
