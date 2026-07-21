@@ -14,6 +14,7 @@ capability_source_dir="$repo_root/deploy/hardware-capabilities"
 capability_config_dir="$config_dir/hardware-capabilities"
 signal_policy_source_dir="$repo_root/deploy/signal-policies"
 signal_policy_config_dir="$config_dir/signal-policies"
+state_dir=/var/lib/spark-signals
 maple_credential=/etc/srvmini2/spark-signals/maple-otlp-client.json
 
 require_regular_file() {
@@ -126,6 +127,7 @@ fi
 
 create_service_user spark-signals-agent
 create_service_user spark-signals-bridge
+install -d -o spark-signals-agent -g spark-signals-agent -m 0750 "$state_dir"
 for device_group in video render; do
   if getent group "$device_group" >/dev/null; then
     usermod --append --groups "$device_group" spark-signals-agent

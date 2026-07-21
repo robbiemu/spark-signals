@@ -21,8 +21,10 @@ use tokio::{
     time::Instant,
 };
 
+mod discovery;
 mod signal_policy;
 
+use discovery::DiscoveryTracker;
 use signal_policy::SignalEmitter;
 
 #[derive(Parser)]
@@ -48,14 +50,35 @@ struct Args {
     include_gpu_process_allocations: bool,
     #[arg(long)]
     stdout: bool,
-    #[arg(long)]
+    #[arg(long, conflicts_with = "discover_signals")]
     once: bool,
+    #[command(flatten)]
+    discovery: DiscoveryArgs,
     #[arg(long, default_value_t = 2, value_parser = clap::value_parser!(u64).range(1..=300))]
     interval_seconds: u64,
     #[arg(long, default_value_t = 10, value_parser = clap::value_parser!(u64).range(2..=600))]
     medium_interval_seconds: u64,
     #[arg(long, default_value_t = 60, value_parser = clap::value_parser!(u64).range(10..=3600))]
     slow_interval_seconds: u64,
+}
+
+#[derive(clap::Args)]
+struct DiscoveryArgs {
+    #[arg(long, conflicts_with = "once")]
+    discover_signals: bool,
+    #[arg(
+        long,
+        default_value = "1d",
+        value_parser = parse_duration,
+        requires = "discover_signals"
+    )]
+    discovery_duration: Duration,
+    #[arg(
+        long,
+        default_value = "/var/lib/spark-signals/discovered-signal-policies.toml",
+        requires = "discover_signals"
+    )]
+    discovery_output: PathBuf,
 }
 
 #[derive(Debug, Clone)]
@@ -162,7 +185,7 @@ async fn main() -> Result<()> {
     {
         anyhow::bail!("cadences must satisfy hot <= medium <= slow");
     }
-    let print_stdout = args.stdout || args.nats_url.is_none();
+    let print_stdout = args.stdout || args.nats_url.is_none() && !args.discovery.discover_signals;
     let publish_events = args.nats_url.is_some();
     let (state_sender, state_receiver) = watch::channel(BTreeMap::<String, Publication>::new());
     let (event_sender, event_receiver) = mpsc::channel::<Publication>(128);
@@ -174,6 +197,14 @@ async fn main() -> Result<()> {
         config.hardware_capabilities_dir.as_deref(),
     )?;
     let mut signal_emitter = SignalEmitter::load(config.signal_policies_dir.as_deref())?;
+    let mut discovery = args
+        .discovery
+        .discover_signals
+        .then(DiscoveryTracker::default);
+    let discovery_deadline = args
+        .discovery
+        .discover_signals
+        .then(|| Instant::now() + args.discovery.discovery_duration);
     let mut inventory = host_inventory();
     let mut last_nvidia_inventory = nvidia.inventory();
     inventory.extend(last_nvidia_inventory.clone());
@@ -237,7 +268,7 @@ async fn main() -> Result<()> {
     #[cfg(unix)]
     let mut reload_signal = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
         .context("installing SIGHUP handler")?;
-    if !args.once {
+    if !args.once && !args.discovery.discover_signals {
         tokio::time::sleep(stable_jitter(&node_id, interval)).await;
     }
 
@@ -465,6 +496,16 @@ async fn main() -> Result<()> {
             storage_points.push(age);
         }
         nvidia_points.push(nvidia_age);
+        if let Some(tracker) = &mut discovery {
+            for points in [
+                &system_points,
+                &network_points,
+                &storage_points,
+                &nvidia_points,
+            ] {
+                tracker.observe(points);
+            }
+        }
         let duration = started.elapsed();
         publish_state(
             &state_sender,
@@ -609,6 +650,9 @@ async fn main() -> Result<()> {
             }
             let service_age = collector_ages.observe("service", &service_points);
             service_points.push(service_age);
+            if let Some(tracker) = &mut discovery {
+                tracker.observe(&service_points);
+            }
             publish_state(
                 &state_sender,
                 &args.site,
@@ -627,6 +671,9 @@ async fn main() -> Result<()> {
             let mut llm_points = llm.collect().await;
             let llm_age = collector_ages.observe("llm", &llm_points);
             llm_points.push(llm_age);
+            if let Some(tracker) = &mut discovery {
+                tracker.observe(&llm_points);
+            }
             publish_state(
                 &state_sender,
                 &args.site,
@@ -662,6 +709,20 @@ async fn main() -> Result<()> {
             )?;
         }
         if args.once {
+            break;
+        }
+        if discovery_deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+            let tracker = discovery
+                .take()
+                .context("discovery state ended unexpectedly")?;
+            let summary = tracker.write_policy(&args.discovery.discovery_output)?;
+            eprintln!(
+                "signal discovery complete: valid/changing={}, valid/unchanging={}, invalid={}, output={}",
+                summary.valid_changing,
+                summary.valid_unchanging,
+                summary.invalid,
+                args.discovery.discovery_output.display()
+            );
             break;
         }
     }
@@ -999,6 +1060,30 @@ fn read_trimmed(path: &str) -> Result<String> {
         .to_owned())
 }
 
+fn parse_duration(value: &str) -> Result<Duration, String> {
+    let split = value
+        .find(|character: char| !character.is_ascii_digit())
+        .unwrap_or(value.len());
+    let (amount, unit) = value.split_at(split);
+    let amount = amount
+        .parse::<u64>()
+        .map_err(|_| "duration must start with a positive integer".to_owned())?;
+    if amount == 0 {
+        return Err("duration must be greater than zero".to_owned());
+    }
+    let multiplier = match unit {
+        "s" => 1,
+        "m" => 60,
+        "h" => 60 * 60,
+        "d" => 24 * 60 * 60,
+        _ => return Err("duration unit must be one of s, m, h, or d".to_owned()),
+    };
+    amount
+        .checked_mul(multiplier)
+        .map(Duration::from_secs)
+        .ok_or_else(|| "duration is too large".to_owned())
+}
+
 fn valid_subject_component(value: &str) -> Result<String, String> {
     if !value.is_empty()
         && value
@@ -1061,5 +1146,13 @@ mod tests {
             stable_jitter("spark-885a", interval)
         );
         assert!(stable_jitter("spark-885a", interval) < Duration::from_millis(500));
+    }
+
+    #[test]
+    fn parses_bounded_discovery_durations() {
+        assert_eq!(parse_duration("1d"), Ok(Duration::from_hours(24)));
+        assert_eq!(parse_duration("12h"), Ok(Duration::from_hours(12)));
+        assert!(parse_duration("0s").is_err());
+        assert!(parse_duration("1day").is_err());
     }
 }
