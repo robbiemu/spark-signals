@@ -30,11 +30,17 @@ drops root and supplementary groups before initializing OTEL or NATS. The
 credential contents, password, and header are never placed in argv, the environment,
 logs, or telemetry.
 
-If a NATS password is exposed, `deploy/rotate-nats-bridge-password.sh` rotates
-the bridge-only credential in the broker and both runtime files, recreates the
-broker, restarts the bridge, and proves that the new credential succeeds while
+If a NATS password is exposed, `deploy/rotate-nats-bridge-password.sh` updates
+the bridge-only credential in `deploy/runtime/nats.env`,
+`deploy/runtime/bridge.env`, and `/etc/spark-signals/bridge.env`; recreates the
+broker; restarts the bridge; and proves that the new credential succeeds while
 the old credential is rejected. The rotation never prints either value and
 rolls back files and services if verification fails.
+
+The rotation script runs as root and changes credentials and live services.
+
+> [!IMPORTANT]
+> Review scripts before running them with root privileges.
 
 Model probes collect only endpoint availability and numeric operational
 metrics. The agent does not collect prompts, responses, model paths, API keys,
