@@ -33,7 +33,13 @@ the finite v1 attribute catalogue before any OTEL instrument is created.
 
 Health events become OTEL logs with the host and Spark identifiers, boot ID,
 sequence, observation time, domain, code, and severity. Unavailable metric
-values are logged with quality and error code rather than recorded as zero.
+values are logged with quality and error code rather than recorded as zero. The
+unavailable log uses real OTEL attributes for the metric name, validated v1
+point attributes, measurement source and quality, error code, and node identity.
+Unsupported capability state is informational and deduplicated until the same
+capability is measured again; transient collection failures remain error logs.
+Unknown point-attribute keys and unrecognized measurement sources are never
+copied into a log record.
 
 OTLP/HTTP uses protobuf at `/v1/metrics` and `/v1/logs`. Endpoint, TLS, and
 authorization headers use the standard `OTEL_EXPORTER_OTLP_*` environment

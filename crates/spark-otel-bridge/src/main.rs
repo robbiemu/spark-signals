@@ -14,6 +14,10 @@ use spark_schema::{Envelope, InstrumentKind, MetricPoint, Quality, Severity, Sig
 use tokio::sync::mpsc;
 use tracing_subscriber::{filter::LevelFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
+mod unavailable_log;
+
+use unavailable_log::UnavailableLogEmitter;
+
 const OTEL_SEMCONV_REVISION: &str = "1.41.1";
 
 #[derive(Parser)]
@@ -35,15 +39,17 @@ struct Args {
 
 struct Instruments {
     meter: Meter,
+    unavailable_logs: UnavailableLogEmitter,
     gauges: HashMap<String, Gauge<f64>>,
     counters: HashMap<String, Counter<f64>>,
     histograms: HashMap<String, Histogram<f64>>,
 }
 
 impl Instruments {
-    fn new() -> Self {
+    fn new(logger_provider: &SdkLoggerProvider) -> Self {
         Self {
             meter: global::meter("spark-otel-bridge"),
+            unavailable_logs: UnavailableLogEmitter::new(logger_provider),
             gauges: HashMap::new(),
             counters: HashMap::new(),
             histograms: HashMap::new(),
@@ -52,9 +58,10 @@ impl Instruments {
 
     fn record(&mut self, envelope: &Envelope, point: &MetricPoint) {
         let Some(value) = point.value else {
-            tracing::warn!(metric.name = %point.name, measurement.quality = ?point.quality, measurement.source = %point.source, error.code = point.error_code.as_deref().unwrap_or(""), spark.node.id = %envelope.node.id, spark.signal.sequence = envelope.sequence, "metric unavailable");
+            self.unavailable_logs.emit(envelope, point);
             return;
         };
+        self.unavailable_logs.observe_available(point);
         let mut attributes = vec![
             KeyValue::new("host.name", envelope.node.host_name.clone()),
             KeyValue::new("host.id", envelope.node.id.clone()),
@@ -146,7 +153,7 @@ async fn main() -> Result<()> {
         }
     });
     tracing::info!(nats.url = %args.nats_url, nats.subject = %args.subject, "Spark OTEL bridge started");
-    let mut instruments = Instruments::new();
+    let mut instruments = Instruments::new(&logger_provider);
     loop {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => break,
