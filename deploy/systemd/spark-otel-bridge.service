@@ -1,22 +1,19 @@
 [Unit]
-Description=Spark Signals host telemetry agent
+Description=Spark Signals NATS to OTLP bridge
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=spark-signals-agent
-Group=spark-signals-agent
-EnvironmentFile=/etc/spark-signals/agent.env
-ExecStart=/usr/local/bin/spark-agent --config /etc/spark-signals/agent.toml
-ExecReload=/bin/kill -HUP $MAINPID
+EnvironmentFile=/etc/spark-signals/bridge.env
+ExecStart=/usr/local/bin/spark-otel-bridge
 Restart=on-failure
 RestartSec=5
 UMask=0027
-StateDirectory=spark-signals
-StateDirectoryMode=0750
+LimitCORE=0
 
 NoNewPrivileges=yes
+PrivateDevices=yes
 PrivateTmp=yes
 ProtectHome=yes
 ProtectSystem=strict
@@ -25,10 +22,10 @@ ProtectKernelModules=yes
 ProtectControlGroups=yes
 RestrictSUIDSGID=yes
 RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
-ReadOnlyPaths=/proc
-ReadOnlyPaths=/sys
-
 [Install]
 WantedBy=multi-user.target

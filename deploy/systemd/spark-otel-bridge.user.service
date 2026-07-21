@@ -1,0 +1,21 @@
+[Unit]
+Description=Spark Signals NATS to OTLP bridge (development user service)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/projects/spark-signals/deploy/runtime/bridge.env
+ExecStart=%h/projects/spark-signals/target/release/spark-otel-bridge
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=read-only
+ProtectSystem=strict
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+
+[Install]
+WantedBy=default.target

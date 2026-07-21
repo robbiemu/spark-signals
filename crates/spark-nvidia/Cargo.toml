@@ -1,16 +1,16 @@
 [package]
-name = "spark-linux"
+name = "spark-nvidia"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [dependencies]
-nix = { version = "0.30", features = ["feature", "fs"] }
+anyhow.workspace = true
+nvml-wrapper = "0.12.1"
+serde.workspace = true
 spark-schema = { path = "../spark-schema" }
-
-[dev-dependencies]
-serde_json.workspace = true
+toml.workspace = true
 
 [lints]
 workspace = true

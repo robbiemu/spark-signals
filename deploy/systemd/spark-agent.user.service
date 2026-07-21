@@ -1,11 +1,13 @@
 [Unit]
-Description=Spark Signals host telemetry agent (prototype)
+Description=Spark Signals host telemetry agent (development user service)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=%h/projects/spark-signals/target/release/spark-agent --stdout --site home --node %H
+EnvironmentFile=%h/projects/spark-signals/deploy/runtime/agent.env
+ExecStart=%h/projects/spark-signals/target/release/spark-agent --config %h/projects/spark-signals/deploy/example-config/agent.toml
+ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=5
 
