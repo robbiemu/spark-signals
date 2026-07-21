@@ -1,4 +1,5 @@
 hardware_capabilities_dir = "/etc/spark-signals/hardware-capabilities"
+signal_policies_dir = "/etc/spark-signals/signal-policies"
 
 # Only entries listed here are probed. Model paths and command lines are never read.
 [[service]]

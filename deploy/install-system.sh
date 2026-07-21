@@ -12,6 +12,8 @@ legacy_user=${2:-}
 config_dir=/etc/spark-signals
 capability_source_dir="$repo_root/deploy/hardware-capabilities"
 capability_config_dir="$config_dir/hardware-capabilities"
+signal_policy_source_dir="$repo_root/deploy/signal-policies"
+signal_policy_config_dir="$config_dir/signal-policies"
 maple_credential=/etc/srvmini2/spark-signals/maple-otlp-client.json
 
 require_regular_file() {
@@ -48,6 +50,23 @@ if test "${#capability_profiles[@]}" -eq 0; then
 fi
 for profile in "${capability_profiles[@]}"; do
   require_regular_file "$profile"
+done
+
+if test -L "$signal_policy_source_dir" || ! test -d "$signal_policy_source_dir"; then
+  printf 'Signal policy directory is missing or is a symlink: %s\n' \
+    "$signal_policy_source_dir" >&2
+  exit 1
+fi
+shopt -s nullglob
+signal_policy_files=("$signal_policy_source_dir"/*.toml)
+shopt -u nullglob
+if test "${#signal_policy_files[@]}" -eq 0; then
+  printf 'No signal policy files were found in: %s\n' \
+    "$signal_policy_source_dir" >&2
+  exit 1
+fi
+for policy in "${signal_policy_files[@]}"; do
+  require_regular_file "$policy"
 done
 
 user_systemctl() {
@@ -118,6 +137,10 @@ install -d -o root -g root -m 0755 "$capability_config_dir"
 find "$capability_config_dir" -mindepth 1 -maxdepth 1 -type f -name '*.toml' -delete
 install -o root -g root -m 0644 \
   "${capability_profiles[@]}" "$capability_config_dir/"
+install -d -o root -g root -m 0755 "$signal_policy_config_dir"
+find "$signal_policy_config_dir" -mindepth 1 -maxdepth 1 -type f -name '*.toml' -delete
+install -o root -g root -m 0644 \
+  "${signal_policy_files[@]}" "$signal_policy_config_dir/"
 install -o root -g root -m 0755 \
   "$repo_root/target/release/spark-agent" /usr/local/bin/spark-agent
 install -o root -g root -m 0755 \

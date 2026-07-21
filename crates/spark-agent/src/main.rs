@@ -21,6 +21,10 @@ use tokio::{
     time::Instant,
 };
 
+mod signal_policy;
+
+use signal_policy::SignalEmitter;
+
 #[derive(Parser)]
 #[command(about = "DGX Spark host telemetry agent")]
 struct Args {
@@ -169,6 +173,7 @@ async fn main() -> Result<()> {
         args.include_gpu_process_allocations,
         config.hardware_capabilities_dir.as_deref(),
     )?;
+    let mut signal_emitter = SignalEmitter::load(config.signal_policies_dir.as_deref())?;
     let mut inventory = host_inventory();
     let mut last_nvidia_inventory = nvidia.inventory();
     inventory.extend(last_nvidia_inventory.clone());
@@ -247,12 +252,14 @@ async fn main() -> Result<()> {
                 };
                 match AgentConfig::load(path).and_then(|next| {
                     let probe = LlmProbe::new(next.llm.clone())?;
+                    let emitter = SignalEmitter::load(next.signal_policies_dir.as_deref())?;
                     nvidia.reload_capabilities(next.hardware_capabilities_dir.as_deref())?;
-                    Ok((next, probe))
+                    Ok((next, probe, emitter))
                 }) {
-                    Ok((next, probe)) => {
+                    Ok((next, probe, emitter)) => {
                         config = next;
                         llm = probe;
+                        signal_emitter = emitter;
                         last_nvidia_inventory = nvidia.inventory();
                         let mut inventory = host_inventory();
                         inventory.extend(last_nvidia_inventory.clone());
@@ -466,7 +473,7 @@ async fn main() -> Result<()> {
             "sample.system",
             factory.build(
                 Signal::MetricBatch {
-                    points: system_points,
+                    points: signal_emitter.filter(system_points),
                 },
                 duration,
                 interval.saturating_mul(3),
@@ -480,7 +487,7 @@ async fn main() -> Result<()> {
             "sample.network",
             factory.build(
                 Signal::MetricBatch {
-                    points: network_points,
+                    points: signal_emitter.filter(network_points),
                 },
                 duration,
                 interval.saturating_mul(3),
@@ -495,7 +502,7 @@ async fn main() -> Result<()> {
                 "sample.storage",
                 factory.build(
                     Signal::MetricBatch {
-                        points: storage_points,
+                        points: signal_emitter.filter(storage_points),
                     },
                     duration,
                     Duration::from_secs(args.medium_interval_seconds).saturating_mul(3),
@@ -510,7 +517,7 @@ async fn main() -> Result<()> {
             "sample.nvidia",
             factory.build(
                 Signal::MetricBatch {
-                    points: nvidia_points,
+                    points: signal_emitter.filter(nvidia_points),
                 },
                 duration,
                 interval.saturating_mul(3),
@@ -609,7 +616,7 @@ async fn main() -> Result<()> {
                 "sample.service",
                 factory.build(
                     Signal::MetricBatch {
-                        points: service_points,
+                        points: signal_emitter.filter(service_points),
                     },
                     Duration::ZERO,
                     Duration::from_secs(30),
@@ -626,7 +633,9 @@ async fn main() -> Result<()> {
                 &node_id,
                 "sample.llm",
                 factory.build(
-                    Signal::MetricBatch { points: llm_points },
+                    Signal::MetricBatch {
+                        points: signal_emitter.filter(llm_points),
+                    },
                     llm_started.elapsed(),
                     Duration::from_secs(30),
                 ),
