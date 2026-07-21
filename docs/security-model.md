@@ -21,13 +21,13 @@ system accounts and units under `multi-user.target`. It has no runtime
 dependency on the SSH/installing user and needs no systemd lingering. The
 development user units are retained only for unprivileged iteration.
 
-Maple authorization is not accepted from an environment file by the production
-installer. The bridge opens the producer credential with `O_NOFOLLOW`, requires
+The Maple target plugin does not accept authorization from an environment file.
+It opens the producer credential with `O_NOFOLLOW`, requires
 a regular root-owned mode-`0600` file under a root-controlled directory chain,
 limits its size, and validates its configured schema, producer, endpoint, protocol,
 and username shape. It constructs the Basic header in memory, then permanently
 drops root and supplementary groups before initializing OTEL or NATS. The
-credential, password, and header are never placed in argv, the environment,
+credential contents, password, and header are never placed in argv, the environment,
 logs, or telemetry.
 
 If a NATS password is exposed, `deploy/rotate-nats-bridge-password.sh` rotates

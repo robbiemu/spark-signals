@@ -66,8 +66,9 @@ Username/password and JWT/NKey deployment paths are documented in
 [docs/nats-credentials.md](docs/nats-credentials.md).
 The pinned OTEL conventions and instrument mapping are in
 [docs/otel-mapping.md](docs/otel-mapping.md).
-The managed producer credential and privilege-drop flow are documented in
-[docs/maple-integration.md](docs/maple-integration.md).
+The bridge's compile-time target-plugin architecture and configuration are in
+[docs/otel-target-plugins.md](docs/otel-target-plugins.md); Maple-specific
+credential handling is in [docs/maple-integration.md](docs/maple-integration.md).
 The finite metric and attribute names are listed in
 [docs/metric-catalogue.md](docs/metric-catalogue.md).
 
@@ -86,10 +87,11 @@ When migrating an existing development user service, pass that login name as
 the optional second argument so the installer can disable the legacy units.
 
 The installer copies root-owned binaries and configuration out of the home
-directory and installs the agent as `spark-signals-agent`. When
-`deploy/runtime/bridge.env` names an existing validated Maple credential, it
-also enables the bridge; otherwise that unit remains disabled. The
-`.user.service` files remain development-only examples.
+directory and installs the agent as `spark-signals-agent`. When a protected
+`deploy/runtime/bridge.env` exists and its selected target passes the bridge's
+non-exporting preflight, the installer also enables the bridge; otherwise that
+unit remains disabled. Start from `deploy/example-config/bridge.env` for a
+standard OTLP target. The `.user.service` files remain development-only examples.
 
 ## Validate
 

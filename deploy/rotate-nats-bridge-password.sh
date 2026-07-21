@@ -81,25 +81,6 @@ rewrite_value() {
   mv -f -- "$temporary" "$path"
 }
 
-remove_otel_overrides() {
-  local path=$1
-  local temporary line
-  temporary=$(mktemp "${path}.sanitize.XXXXXX")
-  while IFS= read -r line || test -n "$line"; do
-    case "$line" in
-      OTEL_EXPORTER_OTLP_ENDPOINT=* | OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=* | \
-        OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=* | OTEL_EXPORTER_OTLP_PROTOCOL=* | \
-        OTEL_EXPORTER_OTLP_METRICS_PROTOCOL=* | OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=* | \
-        OTEL_EXPORTER_OTLP_HEADERS=* | OTEL_EXPORTER_OTLP_METRICS_HEADERS=* | \
-        OTEL_EXPORTER_OTLP_LOGS_HEADERS=*) ;;
-      *) printf '%s\n' "$line" >>"$temporary" ;;
-    esac
-  done <"$path"
-  chown --reference="$path" "$temporary"
-  chmod --reference="$path" "$temporary"
-  mv -f -- "$temporary" "$path"
-}
-
 for path in "$nats_env" "$runtime_bridge_env" "$system_bridge_env" "$compose"; do
   require_secret_file "$path"
 done
@@ -119,8 +100,6 @@ fi
 rewrite_value "$nats_env" SPARK_BRIDGE_PASSWORD "$new_password"
 rewrite_value "$runtime_bridge_env" NATS_PASSWORD "$new_password"
 rewrite_value "$system_bridge_env" NATS_PASSWORD "$new_password"
-remove_otel_overrides "$runtime_bridge_env"
-remove_otel_overrides "$system_bridge_env"
 changed=yes
 
 docker compose -f "$compose" up -d --force-recreate >/dev/null
@@ -168,4 +147,4 @@ PY
 unset old_password new_password ROTATED_VALUE
 committed=yes
 printf 'spark-bridge NATS password rotated; new credential accepted and old credential rejected\n'
-printf 'agent and bridge remained active; OTLP environment overrides removed\n'
+printf 'agent and bridge remained active; OTLP target configuration preserved\n'

@@ -75,14 +75,14 @@ publication passed, the broker survived a stop/start exercise, the agent stayed
 active, and a connected consumer received replayed inventory after reconnect.
 Live subscription checks received all six sample subjects.
 
-## Phase 4 — OTEL bridge and Maple
+## Phase 4 — OTEL bridge and target plugins
 
 - [x] Add `spark-otel-bridge` with a bounded NATS receive/export pipeline.
 - [x] Map catalogue metrics to OTEL instruments with stable Spark resource and
   measurement attributes, pinned to semantic-convention revision 1.41.1.
 - [x] Translate health events to OTEL logs and reject oversized/unknown messages.
-- [x] Configure OTLP/HTTP metrics and logs through standard development OTEL
-  variables and a validated managed-credential path for production Maple.
+- [x] Configure OTLP/HTTP metrics and logs through compile-time `standard` and
+  authenticated Maple target plugins with a backend-neutral prepared target.
 - [x] Test metrics and logs, injected authorization, receiver outage isolation,
   and recovery against a local OTLP receiver.
 
@@ -115,6 +115,9 @@ RAM-intensive inference services.
 
 ## Phase 6 — consumers and operational hardening
 
+- [ ] Evaluate Grafana Cloud, Honeycomb, New Relic, and Datadog through the
+  `standard` OTLP target; add provider plugins only where credential security,
+  endpoint validation, or override policy requires provider-specific behavior.
 - [ ] Build a pure NATS consumer UI with per-domain freshness and quality states.
 - [ ] Decide between direct NATS WebSocket and an authenticated thin gateway.
 - [ ] Measure and enforce the agent/bridge RSS, CPU, binary-size, and payload budgets.

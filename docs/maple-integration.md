@@ -1,4 +1,8 @@
-# Maple integration
+# Maple target plugin
+
+Maple is one built-in authenticated OTLP target profile. See
+[OTLP target plugins](otel-target-plugins.md) for the backend-neutral bridge
+boundary and standard target.
 
 The production bridge consumes the managed producer identity `spark-signals`
 and exports OTLP over HTTP/protobuf to the credential's approved base endpoint.
@@ -9,12 +13,13 @@ The ignored `deploy/runtime/bridge.env` supplies the deployment-specific
 contract without exposing its path or namespace in the public repository:
 
 ```dotenv
-MAPLE_CREDENTIAL=/absolute/path/to/maple-otlp-client.json
-MAPLE_CREDENTIAL_SCHEMA=maple-otlp-client/v1
-MAPLE_PRODUCER=spark-signals
+SPARK_OTEL_TARGET=maple
+SPARK_OTEL_MAPLE_CREDENTIAL=/absolute/path/to/credential.json
+SPARK_OTEL_MAPLE_CREDENTIAL_SCHEMA=deployment-supplied-schema
+SPARK_OTEL_MAPLE_PRODUCER=deployment-supplied-producer
 ```
 
-`MAPLE_CREDENTIAL` must name a regular root-owned mode-`0600` file. Its
+`SPARK_OTEL_MAPLE_CREDENTIAL` must name a regular root-owned mode-`0600` file. Its
 directory chain must
 be root-owned and not group- or world-writable. Do not copy its contents through
 chat, logs, argv, environment variables, repository files, or a user-readable
@@ -32,8 +37,9 @@ At startup the bridge:
    `spark-signals-bridge`; and
 7. initializes the OTEL exporters and NATS subscriber after the privilege drop.
 
-The system installer enables the bridge only when this credential exists and
-the process remains active after validation. The root-owned credential's base
+The system installer enables the bridge only when the protected bridge
+environment exists, `--validate-config` succeeds, and the process remains
+active. The root-owned credential's base
 endpoint is authoritative. Secure mode rejects OTLP endpoint, protocol, and
 header environment variables so they cannot override it.
 
