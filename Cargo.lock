@@ -2017,17 +2017,21 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-nats",
+ "base64",
  "clap",
  "futures-util",
+ "nix",
  "opentelemetry",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
+ "serde",
  "serde_json",
  "spark-schema",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "zeroize",
 ]
 
 [[package]]

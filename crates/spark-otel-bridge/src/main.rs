@@ -1,24 +1,45 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{
+    collections::HashMap,
+    env,
+    fs::File,
+    io::Read,
+    os::unix::fs::MetadataExt,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use clap::Parser;
 use futures_util::StreamExt;
+#[cfg(target_os = "linux")]
+use nix::unistd::{Gid, User, setgid, setgroups, setuid};
+use nix::{
+    fcntl::{OFlag, open},
+    sys::stat::Mode,
+    unistd::Uid,
+};
 use opentelemetry::{
     KeyValue, global,
     metrics::{Counter, Gauge, Histogram, Meter},
 };
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
-use opentelemetry_otlp::{Protocol, WithExportConfig};
+use opentelemetry_otlp::{Protocol, WithExportConfig, WithHttpConfig};
 use opentelemetry_sdk::{Resource, logs::SdkLoggerProvider, metrics::SdkMeterProvider};
+use serde::Deserialize;
 use spark_schema::{Envelope, InstrumentKind, MetricPoint, Quality, Severity, Signal, decode_v1};
 use tokio::sync::mpsc;
 use tracing_subscriber::{filter::LevelFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use zeroize::{Zeroize, Zeroizing};
 
 mod unavailable_log;
 
 use unavailable_log::UnavailableLogEmitter;
 
 const OTEL_SEMCONV_REVISION: &str = "1.41.1";
+const MAPLE_CREDENTIAL_SCHEMA: &str = "srvmini2-maple-otlp-client/v1";
+const MAPLE_PROTOCOL: &str = "http/protobuf";
+const MAPLE_ENDPOINT: &str = "http://srvmini2.lan:4318";
+const MAX_MAPLE_CREDENTIAL_BYTES: u64 = 16 * 1024;
 
 #[derive(Parser)]
 #[command(about = "Translate Spark Signals from NATS to OTLP/HTTP")]
@@ -35,6 +56,36 @@ struct Args {
     nats_password: Option<String>,
     #[arg(long, env = "NATS_CA")]
     nats_ca: Option<PathBuf>,
+    #[arg(long)]
+    maple_credential: Option<PathBuf>,
+    #[arg(long, default_value = "spark-signals")]
+    maple_producer: String,
+    #[arg(long, default_value = "spark-signals-bridge")]
+    run_as_user: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MapleCredential {
+    #[serde(rename = "$schema")]
+    schema: String,
+    endpoint: String,
+    password: String,
+    producer: String,
+    protocol: String,
+    username: String,
+}
+
+impl Drop for MapleCredential {
+    fn drop(&mut self) {
+        self.password.zeroize();
+    }
+}
+
+struct MapleExporterConfig {
+    metrics_endpoint: String,
+    logs_endpoint: String,
+    headers: HashMap<String, String>,
 }
 
 struct Instruments {
@@ -118,7 +169,16 @@ impl Instruments {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-    let (meter_provider, logger_provider) = initialize_otel()?;
+    let maple = args
+        .maple_credential
+        .as_deref()
+        .map(|path| load_maple_exporter_config(path, &args.maple_producer))
+        .transpose()?;
+    if maple.is_some() {
+        reject_otel_override_environment()?;
+    }
+    drop_root_privileges(&args.run_as_user)?;
+    let (meter_provider, logger_provider) = initialize_otel(maple.as_ref())?;
     let mut options = async_nats::ConnectOptions::new()
         .name("spark-otel-bridge")
         .max_reconnects(None);
@@ -181,7 +241,183 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-fn initialize_otel() -> Result<(SdkMeterProvider, SdkLoggerProvider)> {
+fn load_maple_exporter_config(path: &Path, expected_producer: &str) -> Result<MapleExporterConfig> {
+    if !path.is_absolute() {
+        anyhow::bail!("Maple credential path must be absolute");
+    }
+    validate_root_owned_parent_chain(path)?;
+    let descriptor = open(
+        path,
+        OFlag::O_RDONLY | OFlag::O_CLOEXEC | OFlag::O_NOFOLLOW,
+        Mode::empty(),
+    )
+    .with_context(|| format!("opening Maple credential file {}", path.display()))?;
+    let file = File::from(descriptor);
+    let metadata = file
+        .metadata()
+        .context("reading Maple credential metadata")?;
+    validate_maple_credential_metadata(
+        metadata.is_file(),
+        metadata.uid(),
+        metadata.mode(),
+        metadata.len(),
+    )?;
+    let mut bytes = Zeroizing::new(Vec::new());
+    file.take(MAX_MAPLE_CREDENTIAL_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .context("reading Maple credential")?;
+    if bytes.len() as u64 > MAX_MAPLE_CREDENTIAL_BYTES {
+        anyhow::bail!("Maple credential exceeds the size limit");
+    }
+    let credential: MapleCredential =
+        serde_json::from_slice(&bytes).context("decoding Maple credential")?;
+    validate_maple_credential(&credential, expected_producer)?;
+    Ok(maple_exporter_config(&credential))
+}
+
+fn maple_exporter_config(credential: &MapleCredential) -> MapleExporterConfig {
+    let mut basic =
+        String::with_capacity(credential.username.len() + credential.password.len() + 1);
+    basic.push_str(&credential.username);
+    basic.push(':');
+    basic.push_str(&credential.password);
+    let mut encoded = BASE64_STANDARD.encode(basic.as_bytes());
+    basic.zeroize();
+    let mut headers = HashMap::new();
+    headers.insert("authorization".to_owned(), format!("Basic {encoded}"));
+    encoded.zeroize();
+    MapleExporterConfig {
+        metrics_endpoint: format!("{}/v1/metrics", credential.endpoint.trim_end_matches('/')),
+        logs_endpoint: format!("{}/v1/logs", credential.endpoint.trim_end_matches('/')),
+        headers,
+    }
+}
+
+fn validate_root_owned_parent_chain(path: &Path) -> Result<()> {
+    let parent = path
+        .parent()
+        .context("Maple credential path has no parent")?;
+    for directory in parent.ancestors() {
+        if directory.as_os_str().is_empty() {
+            continue;
+        }
+        let metadata = directory.symlink_metadata().with_context(|| {
+            format!("inspecting Maple credential parent {}", directory.display())
+        })?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            anyhow::bail!("Maple credential parent is not a real directory");
+        }
+        if metadata.uid() != 0 || metadata.mode() & 0o022 != 0 {
+            anyhow::bail!("Maple credential parent is not root-controlled");
+        }
+    }
+    Ok(())
+}
+
+fn validate_maple_credential_metadata(
+    regular_file: bool,
+    owner: u32,
+    mode: u32,
+    size: u64,
+) -> Result<()> {
+    if !regular_file {
+        anyhow::bail!("Maple credential is not a regular file");
+    }
+    if owner != 0 {
+        anyhow::bail!("Maple credential is not owned by root");
+    }
+    if mode & 0o7777 != 0o600 {
+        anyhow::bail!("Maple credential mode is not 0600");
+    }
+    if size == 0 || size > MAX_MAPLE_CREDENTIAL_BYTES {
+        anyhow::bail!("Maple credential size is invalid");
+    }
+    Ok(())
+}
+
+fn validate_maple_credential(credential: &MapleCredential, expected_producer: &str) -> Result<()> {
+    if credential.schema != MAPLE_CREDENTIAL_SCHEMA {
+        anyhow::bail!("Maple credential schema is invalid");
+    }
+    if credential.producer != expected_producer {
+        anyhow::bail!("Maple credential producer is invalid");
+    }
+    if credential.endpoint != MAPLE_ENDPOINT {
+        anyhow::bail!("Maple credential endpoint is invalid");
+    }
+    if credential.protocol != MAPLE_PROTOCOL {
+        anyhow::bail!("Maple credential protocol is invalid");
+    }
+    let username_prefix = format!("maple-{expected_producer}-");
+    let valid_username = credential
+        .username
+        .strip_prefix(&username_prefix)
+        .is_some_and(|suffix| {
+            !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_alphanumeric())
+        });
+    if !valid_username || credential.username.contains(':') {
+        anyhow::bail!("Maple credential username is invalid");
+    }
+    if credential.password.is_empty()
+        || credential.password.contains('\r')
+        || credential.password.contains('\n')
+    {
+        anyhow::bail!("Maple credential password is invalid");
+    }
+    Ok(())
+}
+
+fn reject_otel_override_environment() -> Result<()> {
+    for key in [
+        "OTEL_EXPORTER_OTLP_ENDPOINT",
+        "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
+        "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT",
+        "OTEL_EXPORTER_OTLP_PROTOCOL",
+        "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL",
+        "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL",
+        "OTEL_EXPORTER_OTLP_HEADERS",
+        "OTEL_EXPORTER_OTLP_METRICS_HEADERS",
+        "OTEL_EXPORTER_OTLP_LOGS_HEADERS",
+    ] {
+        if env::var_os(key).is_some() {
+            anyhow::bail!(
+                "OTLP endpoint, protocol, and authorization must come from the Maple credential file"
+            );
+        }
+    }
+    Ok(())
+}
+
+fn drop_root_privileges(account: &str) -> Result<()> {
+    if !Uid::effective().is_root() {
+        return Ok(());
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = account;
+        anyhow::bail!("root privilege drop is supported only on Linux");
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let user = User::from_name(account)
+            .context("looking up bridge runtime account")?
+            .with_context(|| format!("bridge runtime account does not exist: {account}"))?;
+        setgroups(&[]).context("clearing bridge supplementary groups")?;
+        setgid(user.gid).context("setting bridge runtime group")?;
+        setuid(user.uid).context("setting bridge runtime user")?;
+        if Uid::effective().is_root()
+            || Uid::effective() != user.uid
+            || Gid::effective() != user.gid
+        {
+            anyhow::bail!("bridge privilege drop did not reach the configured account");
+        }
+        Ok(())
+    }
+}
+
+fn initialize_otel(
+    maple: Option<&MapleExporterConfig>,
+) -> Result<(SdkMeterProvider, SdkLoggerProvider)> {
     let resource = Resource::builder()
         .with_service_name("spark-otel-bridge")
         .with_attribute(KeyValue::new(
@@ -189,9 +425,15 @@ fn initialize_otel() -> Result<(SdkMeterProvider, SdkLoggerProvider)> {
             OTEL_SEMCONV_REVISION,
         ))
         .build();
-    let metric_exporter = opentelemetry_otlp::MetricExporter::builder()
+    let mut metric_exporter = opentelemetry_otlp::MetricExporter::builder()
         .with_http()
-        .with_protocol(Protocol::HttpBinary)
+        .with_protocol(Protocol::HttpBinary);
+    if let Some(config) = maple {
+        metric_exporter = metric_exporter
+            .with_endpoint(config.metrics_endpoint.clone())
+            .with_headers(config.headers.clone());
+    }
+    let metric_exporter = metric_exporter
         .build()
         .context("building OTLP metric exporter")?;
     let meter_provider = SdkMeterProvider::builder()
@@ -199,11 +441,15 @@ fn initialize_otel() -> Result<(SdkMeterProvider, SdkLoggerProvider)> {
         .with_periodic_exporter(metric_exporter)
         .build();
     global::set_meter_provider(meter_provider.clone());
-    let log_exporter = opentelemetry_otlp::LogExporter::builder()
+    let mut log_exporter = opentelemetry_otlp::LogExporter::builder()
         .with_http()
-        .with_protocol(Protocol::HttpBinary)
-        .build()
-        .context("building OTLP log exporter")?;
+        .with_protocol(Protocol::HttpBinary);
+    if let Some(config) = maple {
+        log_exporter = log_exporter
+            .with_endpoint(config.logs_endpoint.clone())
+            .with_headers(config.headers.clone());
+    }
+    let log_exporter = log_exporter.build().context("building OTLP log exporter")?;
     let logger_provider = SdkLoggerProvider::builder()
         .with_resource(resource)
         .with_batch_exporter(log_exporter)
@@ -266,6 +512,17 @@ const fn quality_name(quality: &Quality) -> &'static str {
 mod tests {
     use super::*;
 
+    fn fixture_credential() -> MapleCredential {
+        MapleCredential {
+            schema: MAPLE_CREDENTIAL_SCHEMA.to_owned(),
+            endpoint: MAPLE_ENDPOINT.to_owned(),
+            password: "fixture-password".to_owned(),
+            producer: "spark-signals".to_owned(),
+            protocol: MAPLE_PROTOCOL.to_owned(),
+            username: "maple-spark-signals-g1".to_owned(),
+        }
+    }
+
     #[test]
     fn classifies_health_event_domains() {
         assert_eq!(event_domain("NVIDIA_XID"), "nvidia");
@@ -277,5 +534,53 @@ mod tests {
     #[test]
     fn semantic_convention_revision_is_pinned() {
         assert_eq!(OTEL_SEMCONV_REVISION, "1.41.1");
+    }
+
+    #[test]
+    fn validates_maple_contract_and_builds_signal_endpoints() {
+        let credential = fixture_credential();
+        validate_maple_credential(&credential, "spark-signals").unwrap();
+        let config = maple_exporter_config(&credential);
+        assert_eq!(
+            config.metrics_endpoint,
+            "http://srvmini2.lan:4318/v1/metrics"
+        );
+        assert_eq!(config.logs_endpoint, "http://srvmini2.lan:4318/v1/logs");
+        assert_eq!(
+            config.headers["authorization"],
+            "Basic bWFwbGUtc3Bhcmstc2lnbmFscy1nMTpmaXh0dXJlLXBhc3N3b3Jk"
+        );
+    }
+
+    #[test]
+    fn rejects_wrong_maple_producer_or_protocol() {
+        let mut credential = fixture_credential();
+        credential.producer = "another-producer".to_owned();
+        assert!(validate_maple_credential(&credential, "spark-signals").is_err());
+        credential.producer = "spark-signals".to_owned();
+        credential.protocol = "grpc".to_owned();
+        assert!(validate_maple_credential(&credential, "spark-signals").is_err());
+    }
+
+    #[test]
+    fn enforces_root_owned_regular_mode_0600_credential() {
+        assert!(validate_maple_credential_metadata(true, 0, 0o100_600, 512).is_ok());
+        assert!(validate_maple_credential_metadata(true, 1000, 0o100_600, 512).is_err());
+        assert!(validate_maple_credential_metadata(true, 0, 0o100_640, 512).is_err());
+        assert!(validate_maple_credential_metadata(false, 0, 0o100_600, 512).is_err());
+    }
+
+    #[test]
+    fn denies_unknown_maple_credential_fields() {
+        let json = r#"{
+            "$schema":"srvmini2-maple-otlp-client/v1",
+            "endpoint":"http://srvmini2.lan:4318",
+            "password":"fixture-password",
+            "producer":"spark-signals",
+            "protocol":"http/protobuf",
+            "username":"maple-spark-signals-g1",
+            "unexpected":true
+        }"#;
+        assert!(serde_json::from_str::<MapleCredential>(json).is_err());
     }
 }

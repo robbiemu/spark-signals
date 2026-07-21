@@ -41,7 +41,13 @@ capability is measured again; transient collection failures remain error logs.
 Unknown point-attribute keys and unrecognized measurement sources are never
 copied into a log record.
 
-OTLP/HTTP uses protobuf at `/v1/metrics` and `/v1/logs`. Endpoint, TLS, and
-authorization headers use the standard `OTEL_EXPORTER_OTLP_*` environment
-variables. `deploy/test-otel.sh` verifies header injection, both signal paths,
-receiver outage isolation, and recovery.
+OTLP/HTTP uses protobuf at `/v1/metrics` and `/v1/logs`. The development mock
+path supports standard `OTEL_EXPORTER_OTLP_*` environment variables and
+`deploy/test-otel.sh` verifies header injection, both signal paths, receiver
+outage isolation, and recovery.
+
+Production Maple mode instead takes `--maple-credential` and validates
+`srvmini2-maple-otlp-client/v1`. The credential endpoint is authoritative and
+the bridge constructs the two signal URLs itself. Any general, metrics, or logs
+OTLP header environment variable makes secure mode fail closed so it cannot
+override the credential-derived Basic authorization header.
