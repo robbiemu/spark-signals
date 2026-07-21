@@ -38,7 +38,6 @@ use unavailable_log::UnavailableLogEmitter;
 const OTEL_SEMCONV_REVISION: &str = "1.41.1";
 const MAPLE_CREDENTIAL_SCHEMA: &str = "srvmini2-maple-otlp-client/v1";
 const MAPLE_PROTOCOL: &str = "http/protobuf";
-const MAPLE_ENDPOINT: &str = "http://srvmini2.lan:4318";
 const MAX_MAPLE_CREDENTIAL_BYTES: u64 = 16 * 1024;
 
 #[derive(Parser)]
@@ -342,7 +341,15 @@ fn validate_maple_credential(credential: &MapleCredential, expected_producer: &s
     if credential.producer != expected_producer {
         anyhow::bail!("Maple credential producer is invalid");
     }
-    if credential.endpoint != MAPLE_ENDPOINT {
+    let endpoint_authority = credential
+        .endpoint
+        .strip_prefix("http://")
+        .or_else(|| credential.endpoint.strip_prefix("https://"));
+    if !endpoint_authority.is_some_and(|authority| {
+        !authority.is_empty()
+            && !authority.contains(['/', '?', '#'])
+            && !authority.chars().any(char::is_whitespace)
+    }) {
         anyhow::bail!("Maple credential endpoint is invalid");
     }
     if credential.protocol != MAPLE_PROTOCOL {
@@ -512,14 +519,24 @@ const fn quality_name(quality: &Quality) -> &'static str {
 mod tests {
     use super::*;
 
+    const TEST_ENV: &str = include_str!("../../../.env.test");
+
+    fn test_env(name: &str) -> &'static str {
+        TEST_ENV
+            .lines()
+            .filter_map(|line| line.split_once('='))
+            .find_map(|(key, value)| (key == name).then_some(value))
+            .unwrap_or_else(|| panic!("missing test environment value: {name}"))
+    }
+
     fn fixture_credential() -> MapleCredential {
         MapleCredential {
             schema: MAPLE_CREDENTIAL_SCHEMA.to_owned(),
-            endpoint: MAPLE_ENDPOINT.to_owned(),
-            password: "fixture-password".to_owned(),
+            endpoint: test_env("MAPLE_TEST_ENDPOINT").to_owned(),
+            password: test_env("MAPLE_TEST_AUTH_INPUT").to_owned(),
             producer: "spark-signals".to_owned(),
             protocol: MAPLE_PROTOCOL.to_owned(),
-            username: "maple-spark-signals-g1".to_owned(),
+            username: test_env("MAPLE_TEST_USERNAME").to_owned(),
         }
     }
 
@@ -543,21 +560,31 @@ mod tests {
         let config = maple_exporter_config(&credential);
         assert_eq!(
             config.metrics_endpoint,
-            "http://srvmini2.lan:4318/v1/metrics"
+            format!("{}/v1/metrics", test_env("MAPLE_TEST_ENDPOINT"))
         );
-        assert_eq!(config.logs_endpoint, "http://srvmini2.lan:4318/v1/logs");
         assert_eq!(
-            config.headers["authorization"],
-            "Basic bWFwbGUtc3Bhcmstc2lnbmFscy1nMTpmaXh0dXJlLXBhc3N3b3Jk"
+            config.logs_endpoint,
+            format!("{}/v1/logs", test_env("MAPLE_TEST_ENDPOINT"))
+        );
+        let encoded = config.headers["authorization"]
+            .strip_prefix("Basic ")
+            .expect("Basic authorization scheme");
+        let decoded = BASE64_STANDARD.decode(encoded).expect("base64 header");
+        assert_eq!(
+            decoded,
+            format!("{}:{}", credential.username, credential.password).as_bytes()
         );
     }
 
     #[test]
-    fn rejects_wrong_maple_producer_or_protocol() {
+    fn rejects_wrong_maple_producer_endpoint_or_protocol() {
         let mut credential = fixture_credential();
         credential.producer = "another-producer".to_owned();
         assert!(validate_maple_credential(&credential, "spark-signals").is_err());
         credential.producer = "spark-signals".to_owned();
+        credential.endpoint = "file:///tmp/not-an-otlp-endpoint".to_owned();
+        assert!(validate_maple_credential(&credential, "spark-signals").is_err());
+        credential.endpoint = test_env("MAPLE_TEST_ENDPOINT").to_owned();
         credential.protocol = "grpc".to_owned();
         assert!(validate_maple_credential(&credential, "spark-signals").is_err());
     }
@@ -572,15 +599,16 @@ mod tests {
 
     #[test]
     fn denies_unknown_maple_credential_fields() {
-        let json = r#"{
-            "$schema":"srvmini2-maple-otlp-client/v1",
-            "endpoint":"http://srvmini2.lan:4318",
-            "password":"fixture-password",
-            "producer":"spark-signals",
-            "protocol":"http/protobuf",
-            "username":"maple-spark-signals-g1",
-            "unexpected":true
-        }"#;
-        assert!(serde_json::from_str::<MapleCredential>(json).is_err());
+        let fixture = fixture_credential();
+        let json = serde_json::json!({
+            "$schema": fixture.schema,
+            "endpoint": fixture.endpoint,
+            "password": fixture.password,
+            "producer": fixture.producer,
+            "protocol": fixture.protocol,
+            "username": fixture.username,
+            "unexpected": true
+        });
+        assert!(serde_json::from_value::<MapleCredential>(json).is_err());
     }
 }

@@ -28,14 +28,13 @@ At startup the bridge:
    `spark-signals-bridge`; and
 7. initializes the OTEL exporters and NATS subscriber after the privilege drop.
 
-The system installer enables the bridge only when this credential exists,
-`srvmini2.lan` resolves, and the process remains active after validation. Secure
-mode rejects OTLP endpoint, protocol, and header environment variables so the
-credential remains authoritative.
+The system installer enables the bridge only when this credential exists and
+the process remains active after validation. The root-owned credential's base
+endpoint is authoritative. Secure mode rejects OTLP endpoint, protocol, and
+header environment variables so they cannot override it.
 
 Acceptance was completed on 2026-07-20: Maple returned more than 66 Spark metric
 names and Spark bridge logs carrying `host.id=spark-885a`, while traces remained
-empty as designed. The Spark host currently uses an operator-managed
-`/etc/hosts` record because its resolver has no `.lan` DNS or mDNS answer.
-Absence of exporter errors alone is not sufficient if this acceptance test is
-repeated after a deployment change.
+empty as designed. The deployment required operator-managed name resolution for
+the Maple endpoint. Absence of exporter errors alone is not sufficient if this
+acceptance test is repeated after a deployment change.

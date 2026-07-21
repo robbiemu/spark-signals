@@ -199,10 +199,6 @@ if test -e "$maple_credential"; then
     printf 'Maple credential must be root-owned with mode 0600.\n' >&2
     exit 1
   fi
-  if ! getent hosts srvmini2.lan >/dev/null; then
-    printf 'srvmini2.lan does not resolve on this host.\n' >&2
-    exit 1
-  fi
   if ! systemctl enable spark-otel-bridge.service || ! systemctl restart spark-otel-bridge.service; then
     systemctl disable --now spark-otel-bridge.service >/dev/null 2>&1 || true
     printf 'spark-otel-bridge failed to start with the Maple credential.\n' >&2

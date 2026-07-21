@@ -92,8 +92,8 @@ Maple ingress. Maple queries returned more than 66 metric names, including
 `system.uptime` and `nvidia.gpu.utilization`, plus Spark inventory and
 unavailable-metric logs with `host.id=spark-885a`. The root-owned credential,
 in-process Basic header, privilege drop, bridge lifecycle independence, and zero
-trace output were verified. `srvmini2.lan` currently resolves through the
-operator-managed `/etc/hosts` entry on this node.
+trace output were verified. The Maple endpoint required operator-managed name
+resolution on this node.
 
 ## Phase 5 — configured services and inference adapters
 
