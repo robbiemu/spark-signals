@@ -12,7 +12,7 @@ use spark_schema::{
 
 pub(crate) struct UnavailableLogEmitter {
     logger: SdkLogger,
-    unsupported_capabilities: BTreeSet<UnavailableCapabilityKey>,
+    unavailable_capabilities: BTreeSet<UnavailableCapabilityKey>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -32,13 +32,12 @@ impl UnavailableLogEmitter {
     pub(crate) fn new(logger_provider: &SdkLoggerProvider) -> Self {
         Self {
             logger: logger_provider.logger("spark-otel-bridge.metrics"),
-            unsupported_capabilities: BTreeSet::new(),
+            unavailable_capabilities: BTreeSet::new(),
         }
     }
 
     pub(crate) fn emit(&mut self, envelope: &Envelope, point: &MetricPoint) {
-        let key = capability_key(point);
-        if point.quality == Quality::Unsupported && !self.unsupported_capabilities.insert(key) {
+        if !self.observe_unavailable(point) {
             return;
         }
         if let Some(log) = convert(envelope, point) {
@@ -53,8 +52,12 @@ impl UnavailableLogEmitter {
         }
     }
 
+    fn observe_unavailable(&mut self, point: &MetricPoint) -> bool {
+        self.unavailable_capabilities.insert(capability_key(point))
+    }
+
     pub(crate) fn observe_available(&mut self, point: &MetricPoint) {
-        self.unsupported_capabilities.remove(&capability_key(point));
+        self.unavailable_capabilities.remove(&capability_key(point));
     }
 }
 
@@ -290,5 +293,22 @@ mod tests {
         point.error_code = Some("NVML_TIMEOUT".to_owned());
         let log = convert(&fixture_envelope(), &point).unwrap();
         assert_eq!(log.severity, OtelSeverity::Error);
+    }
+
+    #[test]
+    fn repeated_failures_are_suppressed_until_recovery() {
+        let provider = SdkLoggerProvider::builder().build();
+        let mut emitter = UnavailableLogEmitter::new(&provider);
+        let mut point = unavailable_memory_clock();
+        point.quality = Quality::Error;
+        point.error_code = Some("NVML_TIMEOUT".to_owned());
+
+        assert!(emitter.observe_unavailable(&point));
+
+        point.error_code = Some("NVML_GPU_LOST".to_owned());
+        assert!(!emitter.observe_unavailable(&point));
+
+        emitter.observe_available(&point);
+        assert!(emitter.observe_unavailable(&point));
     }
 }
