@@ -104,13 +104,14 @@ resolution on this node.
   rates when the engine exposes them.
 - [x] Exclude model paths, API keys, command lines, prompts, responses, and
   unconstrained source labels.
-- [ ] Define a versioned, producer-owned `dgx-spark-inference` telemetry
-  discovery contract that atomically describes the current resolved roles,
-  active models, runtime kinds, systemd units, endpoints, metric paths, context
-  capacities, and non-secret authentication-file references. Update the
-  contract on model switches, unloads, reloads, role additions, and endpoint
-  changes so consumers never depend on installation-time defaults or parse the
-  inference system's internal operator files.
+- [ ] Define a versioned agent-side provider interface for live
+  configured-service and inference probe definitions, distinct from OTLP target
+  plugins. Specify stable identities, validated atomic snapshots, safe
+  non-secret authentication-file references, and reconciliation semantics for
+  added, removed, changed, unchanged, invalid, and partial provider state.
+  Preserve sampling state for unchanged probes, reset affected baselines when a
+  definition changes, retain the last valid snapshot after rejected updates,
+  and emit bounded provider-health events.
 
 Validation record (2026-07-19, DGX Spark GB10 host): both configured SGLang endpoints
 were stopped and appeared on the live NATS stream as explicit unreachable/error
@@ -122,31 +123,41 @@ RAM-intensive inference services.
 
 ## Phase 6 — consumers and operational hardening
 
-- [ ] Add a built-in agent-side `dgx-spark-inference` provider plugin, distinct
-  from OTLP target plugins, that watches and periodically reconciles the live
-  discovery contract without restarting either service. Add and remove probes
-  as roles change, reset baselines when an endpoint's model or runtime changes,
-  preserve state for unchanged endpoints, retain the last valid configuration
-  after invalid or partial updates, and emit one bounded health event for a
-  rejected update.
+- [ ] Add a built-in `dgx-spark-inference` agent provider using the generic live
+  provider interface. Define and consume a versioned, producer-owned discovery
+  contract that atomically reflects current resolved roles, active models,
+  runtime kinds, systemd units, endpoints, metric paths, context capacities,
+  and non-secret authentication-file references. Watch and periodically
+  reconcile it so model switches, unloads, reloads, role additions, and endpoint
+  changes take effect without restarting either service or parsing the
+  inference system's internal operator files.
 - [ ] Establish a versioned release process with release criteria, protected
   tags, release notes, checksummed Linux AArch64 bundles containing the binaries
   and deployment assets, documented configuration migrations, and tested
   upgrade and rollback paths. Replace commit-based operator installation with
   release selection when that process is ready.
-- [ ] Evaluate Grafana Cloud, Honeycomb, New Relic, and Datadog through the
-  `standard` OTLP target; add provider plugins only where credential security,
-  endpoint validation, or override policy requires provider-specific behavior.
+- [ ] Define qualification and configuration contracts for additional OTLP
+  target plugins by evaluating Grafana Cloud, Honeycomb, New Relic, and Datadog
+  through the existing `standard` target. Require a demonstrated need such as
+  protected credential loading, endpoint validation, or override policy before
+  selecting a provider-specific implementation.
 - [ ] Build a pure NATS consumer UI with per-domain freshness and quality states.
 - [ ] Decide between direct NATS WebSocket and an authenticated thin gateway.
 - [ ] Measure and enforce the agent/bridge RSS, CPU, binary-size, and payload budgets.
 - [ ] Validate the final systemd sandbox against NVML/device access, relaxing only
   demonstrated restrictions.
-- [ ] Define platform abstraction boundaries for host and accelerator telemetry,
+- [ ] Define platform abstraction interfaces for host and accelerator telemetry,
   configured-service health probes, and agent/bridge supervision, retaining
-  systemd as one Linux backend rather than a core dependency. Use the evaluation
-  to scope possible support for non-DGX clusters, including macOS/Apple Silicon
-  and Linux/AMD accelerator hosts, without weakening privilege isolation or
-  service-status semantics.
+  systemd as one Linux implementation rather than a core dependency.
 - [ ] Complete idle, inference, memory-pressure, broker/exporter outage, service
   restart, and agent restart acceptance scenarios.
+
+## Phase 7 — modular integrations and platform extensions
+
+- [ ] Implement and validate the provider-specific OTLP target plugins selected
+  by the Phase 6 qualification contract, retaining the backend-neutral prepared
+  target boundary and interoperability with the `standard` target.
+- [ ] Implement and validate platform providers for selected non-DGX
+  environments, including possible macOS/Apple Silicon, Linux/AMD accelerator,
+  and clustered hosts, without weakening privilege isolation, quality,
+  freshness, or service-status semantics.
