@@ -37,9 +37,7 @@ values are logged with quality and error code rather than recorded as zero. The
 unavailable log uses real OTEL attributes for the metric name, validated v1
 point attributes, measurement source and quality, error code, and node identity.
 Unsupported capability state is informational and deduplicated until the same
-capability is measured again. Transient collection failures remain error logs,
-but repeated failures for the same metric identity are suppressed until that
-metric is measured again.
+capability is measured again; transient collection failures remain error logs.
 Unknown point-attribute keys and unrecognized measurement sources are never
 copied into a log record.
 
