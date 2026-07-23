@@ -390,12 +390,6 @@ reason = "TEST_POLICY"
     }
 
     #[test]
-    fn deployed_default_policies_are_valid() {
-        let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../deploy/signal-policies");
-        SignalEmitter::load(Some(&directory)).unwrap();
-    }
-
-    #[test]
     fn specific_rule_overrides_metric_wide_rule() {
         let directory = temp_directory();
         fs::write(

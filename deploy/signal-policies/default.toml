@@ -1,8 +1,3 @@
 # Signal policies are applied by the agent before metric batches are emitted.
-# Report every measured LLM availability value and only the first unavailable
-# value for each endpoint until it recovers.
-[[signal_policy]]
-source = "http"
-metric = "spark.llm.available"
-policy = "availability-change"
-reason = "SUPPRESS_REPEATED_LLM_UNAVAILABLE"
+# The default configuration emits every collected v1 metric point.
+signal_policy = []
