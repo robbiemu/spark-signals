@@ -104,6 +104,20 @@ resolution on this node.
   rates when the engine exposes them.
 - [x] Exclude model paths, API keys, command lines, prompts, responses, and
   unconstrained source labels.
+- [ ] Define a versioned, producer-owned `dgx-spark-inference` telemetry
+  discovery contract that atomically describes the current resolved roles,
+  active models, runtime kinds, systemd units, endpoints, metric paths, context
+  capacities, and non-secret authentication-file references. Update the
+  contract on model switches, unloads, reloads, role additions, and endpoint
+  changes so consumers never depend on installation-time defaults or parse the
+  inference system's internal operator files.
+- [ ] Add a built-in agent-side `dgx-spark-inference` provider plugin, distinct
+  from OTLP target plugins, that watches and periodically reconciles the live
+  discovery contract without restarting either service. Add and remove probes
+  as roles change, reset baselines when an endpoint's model or runtime changes,
+  preserve state for unchanged endpoints, retain the last valid configuration
+  after invalid or partial updates, and emit one bounded health event for a
+  rejected update.
 
 Validation record (2026-07-19, DGX Spark GB10 host): both configured SGLang endpoints
 were stopped and appeared on the live NATS stream as explicit unreachable/error
