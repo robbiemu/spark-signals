@@ -111,13 +111,6 @@ resolution on this node.
   contract on model switches, unloads, reloads, role additions, and endpoint
   changes so consumers never depend on installation-time defaults or parse the
   inference system's internal operator files.
-- [ ] Add a built-in agent-side `dgx-spark-inference` provider plugin, distinct
-  from OTLP target plugins, that watches and periodically reconciles the live
-  discovery contract without restarting either service. Add and remove probes
-  as roles change, reset baselines when an endpoint's model or runtime changes,
-  preserve state for unchanged endpoints, retain the last valid configuration
-  after invalid or partial updates, and emit one bounded health event for a
-  rejected update.
 
 Validation record (2026-07-19, DGX Spark GB10 host): both configured SGLang endpoints
 were stopped and appeared on the live NATS stream as explicit unreachable/error
@@ -129,6 +122,13 @@ RAM-intensive inference services.
 
 ## Phase 6 — consumers and operational hardening
 
+- [ ] Add a built-in agent-side `dgx-spark-inference` provider plugin, distinct
+  from OTLP target plugins, that watches and periodically reconciles the live
+  discovery contract without restarting either service. Add and remove probes
+  as roles change, reset baselines when an endpoint's model or runtime changes,
+  preserve state for unchanged endpoints, retain the last valid configuration
+  after invalid or partial updates, and emit one bounded health event for a
+  rejected update.
 - [ ] Establish a versioned release process with release criteria, protected
   tags, release notes, checksummed Linux AArch64 bundles containing the binaries
   and deployment assets, documented configuration migrations, and tested
